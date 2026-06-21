@@ -1,0 +1,50 @@
+# 复制为 config.yaml 后填写；敏感信息建议用环境变量，勿提交到 Git。
+# 支持的环境变量：QINIU_AK、QINIU_SK、DINGTALK_WEBHOOK、FEISHU_WEBHOOK
+
+# 七牛 API 凭据（子账号、最小权限）
+qiniu:
+  access_key: "${QINIU_AK}"
+  secret_key: "${QINIU_SK}"
+
+# acme.sh / Let's Encrypt 配置
+acme:
+  email: ops@example.com
+  ca: letsencrypt_test  # Phase 1 用 letsencrypt_test；Phase 5 改为 letsencrypt
+  key_type: ec-256
+
+# 证书记录：一张 ACME 证书可绑定多个 CDN 加速域名
+certificates:
+  - name: example-main
+    issue_domains:          # acme.sh --issue -d 参数列表
+      - example.com
+      - "*.example.com"
+    dns_provider: dns_ali   # dns_tencent | dns_ali | dns_cf | dns_dp
+    dns_env:                # 值为 acme.sh 环境变量名；阿里云固定 Ali_Key / Ali_Secret
+      ali_key: Ali_Key
+      ali_secret: Ali_Secret
+      # 腾讯云示例: tencent_secret_id: Tencent_SecretId, tencent_secret_key: Tencent_SecretKey
+    qiniu_cdn_domains:      # 七牛融合 CDN 加速域名（非 Kodo 空间域名）
+      - cdn.example.com
+      - static.example.com
+    https:
+      force_https: true     # 强制 HTTP 跳转 HTTPS
+      http2_enable: true
+      tls_versions: "TLSv1.2/TLSv1.3"
+
+# 告警（钉钉 / 飞书 webhook）
+notify:
+  provider: dingtalk          # dingtalk | feishu | auto
+  webhook: "${DINGTALK_WEBHOOK}"
+
+# 路径
+paths:
+  state_file: /var/lib/qiniu-cert/state.json   # 部署状态（certID 记录）
+  log_file: /var/log/acme-qiniu.log
+  install_dir: /opt/qiniu-cert
+
+# 部署与探活参数
+deploy:
+  probe_retries: 15         # 探活次数，15 × 60s ≈ 15 分钟 CDN 生效窗口
+  probe_interval_sec: 60
+  old_cert_cleanup_days: 7    # 换绑成功后等待天数再 DELETE 旧 certID
+  min_valid_days: 30          # 探活要求证书至少剩余有效天数

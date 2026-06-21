@@ -1,0 +1,44 @@
+# Docker Compose 用配置模板（路径指向容器内 /data）
+# 使用: cp config.docker.example.yaml config.docker.yaml 后编辑
+# compose 默认挂载 config.docker.yaml；或设 QINIU_CERT_CONFIG_FILE=./config.yaml
+
+qiniu:
+  access_key: "${QINIU_AK}"
+  secret_key: "${QINIU_SK}"
+
+acme:
+  email: ops@example.com
+  ca: letsencrypt_test  # Phase 1 用 letsencrypt_test；Phase 5 改为 letsencrypt
+  key_type: ec-256
+
+certificates:
+  - name: example-main
+    issue_domains:
+      - example.com
+      - "*.example.com"
+    dns_provider: dns_ali
+    dns_env:
+      ali_key: Ali_Key
+      ali_secret: Ali_Secret
+    qiniu_cdn_domains:
+      - cdn.example.com
+      - static.example.com
+    https:
+      force_https: true
+      http2_enable: true
+      tls_versions: "TLSv1.2/TLSv1.3"
+
+notify:
+  provider: dingtalk
+  webhook: "${DINGTALK_WEBHOOK}"
+
+paths:
+  state_file: /data/state/state.json
+  log_file: /data/log/acme-qiniu.log
+  install_dir: /app
+
+deploy:
+  probe_retries: 15
+  probe_interval_sec: 60
+  old_cert_cleanup_days: 7
+  min_valid_days: 30

@@ -1,0 +1,74 @@
+# 七牛 CDN 证书自动续签 — Docker Compose
+#
+# 准备:
+#   cp .env.example .env && 填写凭据
+#   cp config.docker.example.yaml config.docker.yaml && 编辑域名与 DNS 配置
+#
+# 首次签发 + 部署:
+#   docker compose --profile setup run --rm setup
+#
+# 启动定时任务（supercronic）:
+#   docker compose up -d scheduler
+#
+# 手动续签一轮:
+#   docker compose --profile tools run --rm renew
+
+services:
+  scheduler:
+    build: .
+    image: qiniu-cert-autorenew:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+      QINIU_CERT_CONFIG: /app/config.yaml
+    volumes:
+      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
+      - qiniu-cert-data:/data
+    command: ["/usr/local/bin/supercronic", "/app/docker/crontab"]
+
+  setup:
+    profiles: [setup]
+    build: .
+    image: qiniu-cert-autorenew:latest
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+      QINIU_CERT_CONFIG: /app/config.yaml
+    volumes:
+      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
+      - qiniu-cert-data:/data
+    command: ["/app/docker/setup.sh"]
+
+  renew:
+    profiles: [tools]
+    build: .
+    image: qiniu-cert-autorenew:latest
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+      QINIU_CERT_CONFIG: /app/config.yaml
+    volumes:
+      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
+      - qiniu-cert-data:/data
+    command: ["/app/docker/renew.sh"]
+
+  probe:
+    profiles: [tools]
+    build: .
+    image: qiniu-cert-autorenew:latest
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+      QINIU_CERT_CONFIG: /app/config.yaml
+    volumes:
+      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
+      - qiniu-cert-data:/data
+    command: ["/app/docker/cron-tls.sh"]
+
+volumes:
+  qiniu-cert-data:

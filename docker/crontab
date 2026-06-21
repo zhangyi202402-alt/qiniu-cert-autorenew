@@ -1,0 +1,4 @@
+# Daily 00:08 Asia/Shanghai (TZ) - acme renew + deploy
+8 0 * * * /app/docker/cron-acme.sh
+# Daily 08:15 Asia/Shanghai - TLS probe + old cert cleanup
+15 8 * * * /app/docker/cron-tls.sh
