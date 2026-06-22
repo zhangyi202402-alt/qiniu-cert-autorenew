@@ -2,7 +2,7 @@
 
 ## 1.0.0 — 2026-06-21
 
-Initial open-source release.
+Initial open-source release by 北京卡拉丁汽车技术服务有限公司 ([Kalading](https://www.kalading.com)), author zhangyi.
 
 - ACME (Let's Encrypt) certificate renewal via acme.sh DNS-01
 - Deploy wrapper: upload PEM to Qiniu fusion CDN and bind HTTPS (sslize / httpsconf)

@@ -183,6 +183,18 @@ class DeployService:
                 deleted.append(cert_id)
                 logger.info("deleted old cert %s for %s", cert_id, domain)
             except QiniuApiError as exc:
+                body = exc.body if isinstance(exc.body, dict) else {}
+                code = body.get("code")
+                # 400401：证书已不存在，视为已清理
+                if code == 400401:
+                    self.state.clear_previous(domain)
+                    deleted.append(cert_id)
+                    logger.info(
+                        "old cert %s for %s already absent, cleared state",
+                        cert_id,
+                        domain,
+                    )
+                    continue
                 # 400611 等：旧证仍被绑定，跳过等待下次 cron
                 logger.warning(
                     "skip delete cert %s for %s: %s",

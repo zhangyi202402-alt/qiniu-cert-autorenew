@@ -2,16 +2,13 @@
 #
 # 准备:
 #   cp .env.example .env && 填写凭据
-#   cp config.docker.example.yaml config.docker.yaml && 编辑域名与 DNS 配置
+#   cp config.example.yaml config.yaml && 编辑域名与 acme 配置
 #
 # 首次签发 + 部署:
 #   docker compose --profile setup run --rm setup
 #
 # 启动定时任务（supercronic）:
 #   docker compose up -d scheduler
-#
-# 手动续签一轮:
-#   docker compose --profile tools run --rm renew
 
 services:
   scheduler:
@@ -22,11 +19,12 @@ services:
       - .env
     environment:
       TZ: Asia/Shanghai
+      QINIU_CERT_ROOT: /app
       QINIU_CERT_CONFIG: /app/config.yaml
     volumes:
-      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
-      - qiniu-cert-data:/data
-    command: ["/usr/local/bin/supercronic", "/app/docker/crontab"]
+      - ${QINIU_CERT_CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
+      - ./.local:/app/.local
+    command: ["/usr/local/bin/supercronic", "/app/scripts/crontab.docker"]
 
   setup:
     profiles: [setup]
@@ -36,11 +34,12 @@ services:
       - .env
     environment:
       TZ: Asia/Shanghai
+      QINIU_CERT_ROOT: /app
       QINIU_CERT_CONFIG: /app/config.yaml
     volumes:
-      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
-      - qiniu-cert-data:/data
-    command: ["/app/docker/setup.sh"]
+      - ${QINIU_CERT_CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
+      - ./.local:/app/.local
+    command: ["/app/scripts/setup.sh"]
 
   renew:
     profiles: [tools]
@@ -50,11 +49,12 @@ services:
       - .env
     environment:
       TZ: Asia/Shanghai
+      QINIU_CERT_ROOT: /app
       QINIU_CERT_CONFIG: /app/config.yaml
     volumes:
-      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
-      - qiniu-cert-data:/data
-    command: ["/app/docker/renew.sh"]
+      - ${QINIU_CERT_CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
+      - ./.local:/app/.local
+    command: ["/app/scripts/cron-acme.sh"]
 
   probe:
     profiles: [tools]
@@ -64,11 +64,9 @@ services:
       - .env
     environment:
       TZ: Asia/Shanghai
+      QINIU_CERT_ROOT: /app
       QINIU_CERT_CONFIG: /app/config.yaml
     volumes:
-      - ${QINIU_CERT_CONFIG_FILE:-./config.docker.yaml}:/app/config.yaml:ro
-      - qiniu-cert-data:/data
-    command: ["/app/docker/cron-tls.sh"]
-
-volumes:
-  qiniu-cert-data:
+      - ${QINIU_CERT_CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
+      - ./.local:/app/.local
+    command: ["/app/scripts/cron-tls.sh"]

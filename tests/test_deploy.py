@@ -67,6 +67,32 @@ paths:
     assert cfg.qiniu_sk == "sk-test"
 
 
+def test_load_config_resolves_relative_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("QINIU_AK", "ak")
+    monkeypatch.setenv("QINIU_SK", "sk")
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        """
+qiniu:
+  access_key: "${QINIU_AK}"
+  secret_key: "${QINIU_SK}"
+certificates:
+  - name: t
+    issue_domains: [example.com]
+    dns_provider: dns_ali
+    qiniu_cdn_domains: [cdn.example.com]
+paths:
+  state_file: .local/state/state.json
+acme:
+  key_type: ec-256
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(cfg_file)
+    assert cfg.state_file == (tmp_path / ".local/state/state.json").resolve()
+    assert cfg.acme.key_type == "ec-256"
+
+
 def test_state_store_roundtrip(tmp_path):
     store = StateStore(tmp_path / "state.json")
     store.update_after_deploy("cdn.example.com", "cert-new", cleanup_days=7)
@@ -88,7 +114,6 @@ def test_state_pending_cleanup(tmp_path):
                     "previous_cert_id": "old",
                     "previous_cleanup_after": past,
                     "last_deploy_at": "",
-                    "last_probe_ok": True,
                 }
             }
         ),
@@ -117,7 +142,6 @@ def test_deploy_success(tmp_path):
             )
         ],
         state_file=tmp_path / "state.json",
-        log_file=tmp_path / "log",
         probe_retries=1,
         probe_interval_sec=0,
     )
@@ -154,7 +178,6 @@ def test_deploy_single_domain_probe_fail_keeps_state(tmp_path):
             )
         ],
         state_file=state_file,
-        log_file=tmp_path / "log",
         probe_retries=1,
     )
     service = DeployService(cfg)
@@ -195,7 +218,6 @@ def test_deploy_multi_domain_partial_failure(tmp_path):
             )
         ],
         state_file=state_file,
-        log_file=tmp_path / "log",
         probe_retries=1,
         probe_interval_sec=0,
     )

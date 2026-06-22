@@ -3,11 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 config.yaml
-config.docker.yaml
-docs/api-probe.json
 .env
 /var/
 .local/
 *.log
-/data/
 .DS_Store

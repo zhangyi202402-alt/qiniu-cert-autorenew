@@ -10,7 +10,6 @@ from typing import Any
 
 import yaml
 
-# 支持 ${ENV_VAR} 形式引用环境变量
 ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 
@@ -23,7 +22,6 @@ def _expand_env(value: str) -> str:
 
 
 def _expand(obj: Any) -> Any:
-    """递归展开配置中的环境变量引用。"""
     if isinstance(obj, str):
         return _expand_env(obj)
     if isinstance(obj, dict):
@@ -35,54 +33,62 @@ def _expand(obj: Any) -> Any:
 
 @dataclass
 class HttpsConfig:
-    """CDN 域名 HTTPS 绑定参数（对应 sslize/httpsconf body）。"""
-
     force_https: bool = True
     http2_enable: bool = True
     tls_versions: str = "TLSv1.2/TLSv1.3"
 
 
 @dataclass
-class CertificateConfig:
-    """一张 ACME 证书及其关联的七牛 CDN 域名。"""
+class AcmeConfig:
+    email: str = ""
+    ca: str = "letsencrypt_test"
+    key_type: str = "ec-256"
+    renew_days: int = 30  # 证书到期前 N 天触发续签（acme.sh --days 负值）
+    no_ari: bool = False  # true 时禁用 Let's Encrypt ARI，严格按 renew_days
 
+
+@dataclass
+class CertificateConfig:
     name: str
-    issue_domains: list[str]       # acme.sh -d 参数（可含通配符）
-    dns_provider: str              # acme dns 插件名，如 tencent → dns_tencent
-    qiniu_cdn_domains: list[str]   # 需绑定此证书的 CDN 加速域名
+    issue_domains: list[str]
+    dns_provider: str
+    qiniu_cdn_domains: list[str]
     https: HttpsConfig = field(default_factory=HttpsConfig)
-    dns_env: dict[str, str] = field(default_factory=dict)  # DNS API 凭据对应的环境变量名
+    dns_env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class AppConfig:
-    """应用全局配置。"""
-
     qiniu_ak: str
     qiniu_sk: str
     certificates: list[CertificateConfig]
     state_file: Path
-    log_file: Path
+    acme: AcmeConfig = field(default_factory=AcmeConfig)
     notify_webhook: str = ""
-    notify_provider: str = "auto"  # dingtalk | feishu | auto（按 URL 自动识别）
-    probe_retries: int = 15          # 探活次数，默认 15×60s ≈ 15min
+    notify_provider: str = "auto"
+    probe_retries: int = 15
     probe_interval_sec: int = 60
-    old_cert_cleanup_days: int = 7   # 换绑后等待天数再 DELETE 旧证
-    min_valid_days: int = 30         # 探活要求证书至少剩余有效天数
-    acme_email: str = ""
-    acme_ca: str = "letsencrypt_test"  # Phase 1: letsencrypt_test；生产: letsencrypt
+    old_cert_cleanup_days: int = 7
+    min_valid_days: int = 30
+
+
+def _resolve_path(config_path: Path, value: str | Path) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return (config_path.parent / path).resolve()
 
 
 def load_config(path: str | Path) -> AppConfig:
-    """从 YAML 加载并展开环境变量。"""
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    config_path = Path(path).resolve()
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     data = _expand(raw)
 
     qiniu = data.get("qiniu", {})
     paths = data.get("paths", {})
     deploy = data.get("deploy", {})
     notify = data.get("notify", {})
-    acme = data.get("acme", {})
+    acme_raw = data.get("acme", {})
 
     certs: list[CertificateConfig] = []
     for item in data.get("certificates", []):
@@ -106,29 +112,35 @@ def load_config(path: str | Path) -> AppConfig:
         qiniu_ak=qiniu.get("access_key", ""),
         qiniu_sk=qiniu.get("secret_key", ""),
         certificates=certs,
-        state_file=Path(paths.get("state_file", "/var/lib/qiniu-cert/state.json")),
-        log_file=Path(paths.get("log_file", "/var/log/acme-qiniu.log")),
+        state_file=_resolve_path(config_path, paths.get("state_file", ".local/state/state.json")),
+        acme=AcmeConfig(
+            email=acme_raw.get("email", ""),
+            ca=acme_raw.get("ca", "letsencrypt_test"),
+            key_type=acme_raw.get("key_type", "ec-256"),
+            renew_days=int(acme_raw.get("renew_days", 30)),
+            no_ari=bool(acme_raw.get("no_ari", False)),
+        ),
         notify_webhook=notify.get("webhook", ""),
         notify_provider=str(notify.get("provider", "auto") or "auto"),
         probe_retries=int(deploy.get("probe_retries", 15)),
         probe_interval_sec=int(deploy.get("probe_interval_sec", 60)),
         old_cert_cleanup_days=int(deploy.get("old_cert_cleanup_days", 7)),
         min_valid_days=int(deploy.get("min_valid_days", 30)),
-        acme_email=acme.get("email", ""),
-        acme_ca=acme.get("ca", "letsencrypt_test"),
     )
 
 
 def find_cert_by_issue_domain(config: AppConfig, domain: str) -> CertificateConfig | None:
-    """
-    根据 acme deploy hook 传入的域名匹配证书记录。
-
-    支持：精确匹配 issue_domains、主域后缀匹配（含通配符证书场景）。
-    """
     for cert in config.certificates:
         if domain in cert.issue_domains or domain.rstrip(".") == cert.issue_domains[0]:
             return cert
         base = cert.issue_domains[0].lstrip("*.")
         if domain == base or domain.endswith("." + base):
+            return cert
+    return None
+
+
+def find_cert_by_cdn_domain(config: AppConfig, cdn_domain: str) -> CertificateConfig | None:
+    for cert in config.certificates:
+        if cdn_domain in cert.qiniu_cdn_domains:
             return cert
     return None

@@ -1,5 +1,7 @@
 # 复制为 config.yaml 后填写；敏感信息建议用环境变量，勿提交到 Git。
-# 支持的环境变量：QINIU_AK、QINIU_SK、DINGTALK_WEBHOOK、FEISHU_WEBHOOK
+# 支持的环境变量：见 .env.example（七牛 / DNS / 告警）
+#
+# 数据目录（acme 私钥、state、日志）默认在项目 .local/ 下，Docker 与裸机共用本文件。
 
 # 七牛 API 凭据（子账号、最小权限）
 qiniu:
@@ -9,42 +11,81 @@ qiniu:
 # acme.sh / Let's Encrypt 配置
 acme:
   email: ops@example.com
-  ca: letsencrypt_test  # Phase 1 用 letsencrypt_test；Phase 5 改为 letsencrypt
+  ca: letsencrypt_test  # 验证通过后改为 letsencrypt
   key_type: ec-256
+  renew_days: 15        # 证书到期前 N 天续签（默认 30）
+  no_ari: false         # true=禁用 LE ARI，严格按 renew_days；false=允许 CA 建议窗口
 
 # 证书记录：一张 ACME 证书可绑定多个 CDN 加速域名
+#
+# dns_provider 使用 acme.sh 的 DNS 插件名（可写 dns_ali 或 ali，脚本会自动补 dns_ 前缀）：
+#   dns_ali      阿里云 DNS     → .env: Ali_Key / Ali_Secret
+#   dns_tencent  腾讯云 DNS     → .env: TENCENT_SECRET_ID / TENCENT_SECRET_KEY
+#   dns_dp       DNSPod         → .env: DP_Id / DP_Key（独立 DNSPod 账号）
+#   dns_cf       Cloudflare     → .env: CF_Token 或 CF_Email + CF_Key
+#
+# dns_env 的「值」必须是 acme.sh 要求的环境变量名；左键仅为注释用，可随意命名。
 certificates:
+  # --- 示例 A：阿里云 DNS ---
   - name: example-main
     issue_domains:          # acme.sh --issue -d 参数列表
       - example.com
       - "*.example.com"
-    dns_provider: dns_ali   # dns_tencent | dns_ali | dns_cf | dns_dp
-    dns_env:                # 值为 acme.sh 环境变量名；阿里云固定 Ali_Key / Ali_Secret
+    dns_provider: dns_ali
+    dns_env:
       ali_key: Ali_Key
       ali_secret: Ali_Secret
-      # 腾讯云示例: tencent_secret_id: Tencent_SecretId, tencent_secret_key: Tencent_SecretKey
     qiniu_cdn_domains:      # 七牛融合 CDN 加速域名（非 Kodo 空间域名）
       - cdn.example.com
       - static.example.com
     https:
-      force_https: true     # 强制 HTTP 跳转 HTTPS
+      force_https: true
       http2_enable: true
       tls_versions: "TLSv1.2/TLSv1.3"
+
+  # --- 示例 B：腾讯云 DNS（域名解析在腾讯云「云解析 DNS」控制台）---
+  # - name: example-tencent
+  #   issue_domains:
+  #     - another.com
+  #     - "*.another.com"
+  #   dns_provider: dns_tencent
+  #   dns_env:
+  #     tencent_id: TENCENT_SECRET_ID
+  #     tencent_key: TENCENT_SECRET_KEY
+  #   qiniu_cdn_domains:
+  #     - cdn.another.com
+  #   https:
+  #     force_https: true
+  #     http2_enable: true
+  #     tls_versions: "TLSv1.2/TLSv1.3"
+
+  # --- 示例 C：DNSPod（独立 DNSPod 账号，非腾讯云 CAM 密钥）---
+  # - name: example-dnspod
+  #   issue_domains:
+  #     - dnspod-example.com
+  #   dns_provider: dns_dp
+  #   dns_env:
+  #     dp_id: DP_Id
+  #     dp_key: DP_Key
+  #   qiniu_cdn_domains:
+  #     - cdn.dnspod-example.com
+  #   https:
+  #     force_https: true
+  #     http2_enable: true
+  #     tls_versions: "TLSv1.2/TLSv1.3"
 
 # 告警（钉钉 / 飞书 webhook）
 notify:
   provider: dingtalk          # dingtalk | feishu | auto
   webhook: "${DINGTALK_WEBHOOK}"
 
-# 路径
+# 路径（相对本文件所在目录 = 项目根；日志固定为 .local/log/acme-qiniu.log）
 paths:
-  state_file: /var/lib/qiniu-cert/state.json   # 部署状态（certID 记录）
-  log_file: /var/log/acme-qiniu.log
-  install_dir: /opt/qiniu-cert
+  state_file: .local/state/state.json
 
 # 部署与探活参数
 deploy:
-  probe_retries: 15         # 探活次数，15 × 60s ≈ 15 分钟 CDN 生效窗口
+  probe_retries: 15
   probe_interval_sec: 60
-  old_cert_cleanup_days: 7    # 换绑成功后等待天数再 DELETE 旧 certID
-  min_valid_days: 30          # 探活要求证书至少剩余有效天数
+  old_cert_cleanup_days: 7
+  min_valid_days: 30

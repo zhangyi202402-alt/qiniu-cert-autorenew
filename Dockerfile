@@ -28,17 +28,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY qiniu_cert/ qiniu_cert/
 COPY scripts/ scripts/
-COPY docker/ docker/
 
-RUN chmod +x /app/docker/*.sh /app/scripts/*.sh
+RUN chmod +x /app/scripts/*.sh
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    QINIU_CERT_INSTALL_DIR=/app \
+    QINIU_CERT_ROOT=/app \
     QINIU_CERT_CONFIG=/app/config.yaml \
     QINIU_CERT_PYTHON=python3 \
-    HOME=/data/acme \
-    ACME_HOME=/data/acme \
-    ACME_GIT_REPO=https://gitee.com/neilpang/acme.sh.git
+    ACME_GIT_REPO=https://github.com/acmesh-official/acme.sh.git
 
-ENTRYPOINT ["/app/docker/entrypoint.sh"]
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
