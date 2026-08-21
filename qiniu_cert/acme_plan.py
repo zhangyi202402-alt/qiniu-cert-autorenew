@@ -8,7 +8,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from qiniu_cert.config import AppConfig, load_config
+from qiniu_cert.config import AppConfig, load_config, effective_key_type, iter_targets
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class CertIssuePlan:
     domain_args: str  # 已 shell 转义的 "-d a -d b"
     key_type: str
     cert_dir: str  # acme 证书目录名，如 example.com_ecc 或 example.com
+    deploy_hook: str  # acme.sh --deploy-hook 名称
 
 
 def dns_hook_name(provider: str) -> str:
@@ -94,11 +95,19 @@ def sync_renew_days(config_path: str | Path, acme_home: Path) -> list[str]:
     return updated
 
 
+def deploy_hook_for(cert) -> str:
+    """选择 acme deploy-hook：纯 CLB 用 clb_wrapper，其余用 qiniu_wrapper（router 仍可部署 CLB）。"""
+    types = {t.type for t in iter_targets(cert)}
+    if types == {"aliyun_clb"}:
+        return "clb_wrapper"
+    return "qiniu_wrapper"
+
+
 def build_issue_plans(config: AppConfig) -> list[CertIssuePlan]:
     plans: list[CertIssuePlan] = []
     for cert in config.certificates:
         primary = primary_issue_domain(cert.issue_domains)
-        key_type = config.acme.key_type
+        key_type = effective_key_type(cert, config.acme)
         plans.append(
             CertIssuePlan(
                 name=cert.name,
@@ -107,6 +116,7 @@ def build_issue_plans(config: AppConfig) -> list[CertIssuePlan]:
                 domain_args=domain_args_shell(cert.issue_domains),
                 key_type=key_type,
                 cert_dir=acme_cert_dir(primary, key_type),
+                deploy_hook=deploy_hook_for(cert),
             )
         )
     return plans
@@ -138,6 +148,7 @@ def _print_issue_plans(config_path: str) -> None:
                 plan.domain_args,
                 plan.key_type,
                 plan.cert_dir,
+                plan.deploy_hook,
             ]
         )
         print(row)

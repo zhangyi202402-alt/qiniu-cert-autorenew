@@ -149,7 +149,7 @@ def test_deploy_success(tmp_path):
 
     with patch.object(service.client, "upload_ssl_cert", return_value="cert-123"), patch.object(
         service.client, "bind_https", return_value={"code": 200}
-    ), patch.object(service, "_probe_with_retry", return_value=(True, "ok")):
+    ), patch.object(service.qiniu, "_probe_with_retry", return_value=(True, "ok")):
         cert_id = service.deploy_from_files("example.com", key_path, fullchain)
     assert cert_id == "cert-123"
     assert service.state.get("cdn.example.com").current_cert_id == "cert-123"
@@ -185,7 +185,7 @@ def test_deploy_single_domain_probe_fail_keeps_state(tmp_path):
 
     with patch.object(service.client, "upload_ssl_cert", return_value="cert-new"), patch.object(
         service.client, "bind_https", bind
-    ), patch.object(service, "_probe_with_retry", return_value=(False, "probe timeout")):
+    ), patch.object(service.qiniu, "_probe_with_retry", return_value=(False, "probe timeout")):
         with pytest.raises(DeployError):
             service.deploy_from_files("example.com", key_path, fullchain)
 
@@ -230,7 +230,7 @@ def test_deploy_multi_domain_partial_failure(tmp_path):
 
     with patch.object(service.client, "upload_ssl_cert", return_value="cert-new"), patch.object(
         service.client, "bind_https", return_value={"code": 200}
-    ), patch.object(service, "_probe_with_retry", side_effect=probe_side_effect):
+    ), patch.object(service.qiniu, "_probe_with_retry", side_effect=probe_side_effect):
         with pytest.raises(DeployError, match="failed b.example.com"):
             service.deploy_from_files("example.com", key_path, fullchain)
 

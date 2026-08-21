@@ -89,11 +89,27 @@ def cmd_tls_probe_all(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     root = Path(__file__).resolve().parent.parent
     failed = 0
+    from qiniu_cert.config import TargetAliyunClb, TargetQiniuCdn, iter_targets
+
     for cert in config.certificates:
-        for domain in cert.qiniu_cdn_domains:
+        hosts: list[tuple[str, bool]] = []  # (host, check_force)
+        for t in iter_targets(cert):
+            if isinstance(t, TargetQiniuCdn):
+                for d in t.domains:
+                    hosts.append((d, t.https.force_https))
+            elif isinstance(t, TargetAliyunClb):
+                primary = t.probe_host or cert.issue_domains[0]
+                hosts.append((primary, False))
+                for d in t.domain_extensions:
+                    hosts.append((d, False))
+        if not hosts and cert.qiniu_cdn_domains:
+            for d in cert.qiniu_cdn_domains:
+                hosts.append((d, cert.https.force_https))
+
+        for domain, check_force in hosts:
             ok, msg = tls_probe(domain, min_valid_days=config.min_valid_days)
             force_line = ""
-            if cert.https.force_https:
+            if check_force:
                 fh_ok, fh_msg = probe_force_https(domain)
                 force_line = f" forceHttps={fh_ok} {fh_msg}"
                 ok = ok and fh_ok
@@ -108,12 +124,12 @@ def cmd_tls_probe_all(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="七牛 CDN HTTPS 证书自动续签 CLI")
+    parser = argparse.ArgumentParser(description="CDN/CLB HTTPS 证书自动续签 CLI")
     parser.add_argument("-c", "--config", default="config.yaml", help="配置文件路径")
     parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG 日志")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_dep = sub.add_parser("deploy", help="上传并绑定证书到七牛 CDN")
+    p_dep = sub.add_parser("deploy", help="上传并绑定证书到配置中的部署目标")
     p_dep.add_argument("-d", "--domain", required=True, help="ACME 签发主域名（匹配 config）")
     p_dep.add_argument("--key", required=True, help="私钥 PEM 路径")
     p_dep.add_argument("--fullchain", required=True, help="fullchain PEM 路径")
@@ -123,7 +139,7 @@ def main() -> int:
     p_clean.set_defaults(func=cmd_cleanup)
 
     p_tls = sub.add_parser("tls-probe", help="单域名 TLS 健康检查")
-    p_tls.add_argument("domain", help="CDN 域名")
+    p_tls.add_argument("domain", help="CDN/业务域名")
     p_tls.add_argument("--min-days", type=int, default=None, help="最少剩余有效天数（默认读 config）")
     p_tls.add_argument("--check-force-https", action="store_true", help="强制检查 HTTP→HTTPS")
     p_tls.add_argument(
@@ -133,7 +149,7 @@ def main() -> int:
     )
     p_tls.set_defaults(func=cmd_tls_probe)
 
-    p_all = sub.add_parser("tls-probe-all", help="探活 config 中全部 CDN 域名")
+    p_all = sub.add_parser("tls-probe-all", help="探活 config 中全部部署域名")
     p_all.set_defaults(func=cmd_tls_probe_all)
 
     args = parser.parse_args()

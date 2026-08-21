@@ -14,6 +14,7 @@ export QINIU_CERT_CONFIG="${CONFIG}"
 export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 ln -sf "${ROOT}/scripts/qiniu_wrapper.sh" "${ACME_HOME}/deploy/qiniu_wrapper.sh"
+ln -sf "${ROOT}/scripts/clb_wrapper.sh" "${ACME_HOME}/deploy/clb_wrapper.sh"
 
 eval "$("${PYTHON}" -m qiniu_cert.acme_plan export-dns "${CONFIG}")"
 
@@ -22,8 +23,8 @@ if [[ "$("${PYTHON}" -c "from qiniu_cert.config import load_config; print(1 if l
   export NO_ARI=1
 fi
 
-while IFS=$'\t' read -r name primary dns_hook domain_args key_type cert_dir; do
-  echo "=== Certificate: ${name} (${primary}) ==="
+while IFS=$'\t' read -r name primary dns_hook domain_args key_type cert_dir deploy_hook; do
+  echo "=== Certificate: ${name} (${primary}) hook=${deploy_hook} key=${key_type} ==="
   echo "--- DNS TXT before issue ---"
   "${PYTHON}" -m qiniu_cert.dns_check "${CONFIG}" "${name}"
   FORCE_ARGS=()
@@ -38,7 +39,7 @@ while IFS=$'\t' read -r name primary dns_hook domain_args key_type cert_dir; do
   fi
   echo "--- DNS TXT after issue ---"
   "${PYTHON}" -m qiniu_cert.dns_check "${CONFIG}" "${name}"
-  acme.sh --home "${ACME_HOME}" --deploy -d "${primary}" --deploy-hook qiniu_wrapper
+  acme.sh --home "${ACME_HOME}" --deploy -d "${primary}" --deploy-hook "${deploy_hook}"
   grep Le_DeployHook "${ACME_HOME}/${cert_dir}/${primary}.conf" || true
 done < <("${PYTHON}" -m qiniu_cert.acme_plan list-certs "${CONFIG}")
 

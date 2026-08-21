@@ -13,31 +13,35 @@ Automated Let's Encrypt certificate renewal and deployment for Qiniu CDN (acme.s
 ```
 acme.sh --cron（.local/acme）
   → DNS-01 续签
-  → deploy-hook qiniu_wrapper
-  → POST fusion.qiniuapi.com/sslcert
-  → PUT api.qiniu.com/domain/{d}/sslize|httpsconf
+  → deploy-hook qiniu_wrapper / clb_wrapper
+  → DeployRouter
+       ├─ 七牛 CDN：upload sslcert → 绑定域名
+       └─ 阿里云 CLB：UploadServerCertificate → 换 HTTPS 监听（+SNI 扩展域）
   → TLS 探活 + .local/state/state.json
-  → 旧 certID 延迟清理
+  → 旧证延迟清理
 ```
+
+CLB 说明见 [docs/CLB.md](docs/CLB.md)。
 
 ## 目录结构
 
 ```
 qiniu-cert-autorenew/
-├── config.example.yaml      # 配置模板（复制为 config.yaml）
+├── config.example.yaml
 ├── qiniu_cert/
-│   ├── acme_plan.py         # 从 config 导出 DNS 环境与签发计划
-│   ├── cli.py               # deploy / cleanup / tls-probe / tls-probe-all
-│   ├── config.py            # 配置加载
-│   └── deploy.py            # 七牛上传与绑定
+│   ├── acme_plan.py
+│   ├── cli.py
+│   ├── config.py              # targets + 旧字段兼容
+│   ├── deploy.py              # DeployRouter
+│   ├── clients/aliyun_slb.py  # CLB OpenAPI
+│   └── providers/
+│       ├── qiniu_cdn.py
+│       └── aliyun_clb.py
 ├── scripts/
-│   ├── bootstrap.sh         # 共用环境初始化（.env + .local 路径）
-│   ├── setup.sh             # 首次签发 + deploy（裸机与 Docker 共用）
-│   ├── entrypoint.sh        # Docker 入口
-│   ├── cron-acme.sh         # 定时续签
-│   ├── cron-tls.sh          # 定时探活 + cleanup（合并原 tls-probe-cron）
-│   ├── crontab.docker       # supercronic 任务表
-│   └── install-cron.sh      # 裸机系统 crontab
+│   ├── qiniu_wrapper.sh
+│   ├── clb_wrapper.sh
+│   └── ...
+├── docs/CLB.md
 ├── Dockerfile
 └── docker-compose.yml
 ```

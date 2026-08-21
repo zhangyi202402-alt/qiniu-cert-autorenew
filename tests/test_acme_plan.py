@@ -69,8 +69,41 @@ def test_build_issue_plans_multiple_certs():
     assert plans[1].primary_domain == "b.com"
     assert plans[1].dns_hook == "dns_tencent"
     assert plans[1].cert_dir == "b.com_ecc"
+    assert plans[0].deploy_hook == "qiniu_wrapper"
     assert "-d b.com" in plans[1].domain_args
     assert "*.b.com" in plans[1].domain_args
+
+
+def test_build_issue_plans_clb_uses_rsa_and_clb_hook():
+    from qiniu_cert.config import TargetAliyunClb
+
+    config = AppConfig(
+        qiniu_ak="",
+        qiniu_sk="",
+        aliyun_ak="ak",
+        aliyun_sk="sk",
+        certificates=[
+            CertificateConfig(
+                name="clb",
+                issue_domains=["www.example.com"],
+                dns_provider="dns_ali",
+                key_type="rsa-2048",
+                targets=[
+                    TargetAliyunClb(
+                        region_id="cn-hangzhou",
+                        load_balancer_id="lb-1",
+                        listener_port=443,
+                    )
+                ],
+            )
+        ],
+        state_file=Path("/tmp/state.json"),
+        acme=AcmeConfig(key_type="ec-256"),
+    )
+    plans = build_issue_plans(config)
+    assert plans[0].key_type == "rsa-2048"
+    assert plans[0].cert_dir == "www.example.com"
+    assert plans[0].deploy_hook == "clb_wrapper"
 
 
 def test_dns_env_shell_dedup(monkeypatch, tmp_path):
