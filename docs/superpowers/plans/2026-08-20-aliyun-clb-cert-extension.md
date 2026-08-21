@@ -90,7 +90,7 @@ acme.sh --cron / --deploy-hook
   - `def iter_targets(cert: CertificateConfig) -> list[...]:` 若 `targets` 空且存在 `qiniu_cdn_domains`，合成一个 `TargetQiniuCdn`
   - `def effective_key_type(cert: CertificateConfig, acme: AcmeConfig) -> str`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_config_targets.py
