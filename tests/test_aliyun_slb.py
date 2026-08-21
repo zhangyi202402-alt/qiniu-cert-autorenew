@@ -86,3 +86,50 @@ def test_set_https_listener_certificate_ok(monkeypatch) -> None:
     )
     assert called["data"]["Action"] == "SetLoadBalancerHTTPSListenerAttribute"
     assert called["data"]["ServerCertificateId"] == "id-new"
+
+
+def test_rpc_raises_on_business_error_code(monkeypatch) -> None:
+    from qiniu_cert.clients.aliyun_slb import AliyunSlbError
+
+    client = AliyunSlbClient("ak", "sk")
+
+    def fake_request(method, url, **kwargs):
+        class R:
+            status_code = 200
+            text = "{}"
+
+            def json(self):
+                return {"Code": "InvalidParameter", "Message": "bad param", "RequestId": "r"}
+
+        return R()
+
+    monkeypatch.setattr(client.session, "request", fake_request)
+    try:
+        client.delete_server_certificate(region_id="cn-hangzhou", server_certificate_id="x")
+        raise AssertionError("expected AliyunSlbError")
+    except AliyunSlbError as exc:
+        assert exc.code == "InvalidParameter"
+        assert "bad param" in str(exc)
+
+
+def test_rpc_raises_on_http_400(monkeypatch) -> None:
+    from qiniu_cert.clients.aliyun_slb import AliyunSlbError
+
+    client = AliyunSlbClient("ak", "sk")
+
+    def fake_request(method, url, **kwargs):
+        class R:
+            status_code = 400
+            text = "bad"
+
+            def json(self):
+                return {"Code": "Throttling", "Message": "slow down"}
+
+        return R()
+
+    monkeypatch.setattr(client.session, "request", fake_request)
+    try:
+        client.delete_server_certificate(region_id="cn-hangzhou", server_certificate_id="x")
+        raise AssertionError("expected AliyunSlbError")
+    except AliyunSlbError as exc:
+        assert exc.code == "Throttling"

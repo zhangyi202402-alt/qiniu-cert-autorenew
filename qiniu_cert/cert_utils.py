@@ -30,20 +30,24 @@ def _load_leaf_cert(fullchain_pem: str) -> x509.Certificate:
     raise DeployError("no certificate found in fullchain PEM")
 
 
-def assert_certificate_rsa(fullchain_pem: str) -> None:
-    """叶证书公钥必须为 RSA（CLB 不支持 ECC）。"""
+def assert_certificate_rsa(fullchain_pem: str, *, min_bits: int = 2048) -> None:
+    """叶证书公钥必须为 RSA，且位数不少于 min_bits（CLB 默认要求 ≥2048）。"""
     from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
 
     leaf = _load_leaf_cert(fullchain_pem)
-    if not isinstance(leaf.public_key(), rsa_mod.RSAPublicKey):
+    pub = leaf.public_key()
+    if not isinstance(pub, rsa_mod.RSAPublicKey):
         raise DeployError("CLB requires RSA certificate; ECC/other key types are not supported")
+    bits = pub.key_size
+    if bits < min_bits:
+        raise DeployError(f"CLB requires RSA>={min_bits} bits; got {bits}")
 
 
-def ensure_rsa_private_key_pkcs1(pem: str) -> str:
+def ensure_rsa_private_key_pkcs1(pem: str, *, min_bits: int = 2048) -> str:
     """
     将私钥转为 CLB 所需的未加密 PKCS#1（BEGIN RSA PRIVATE KEY）。
 
-    若已是 PKCS#1 RSA 则原样规范化输出；非 RSA 则抛 DeployError。
+    若已是 PKCS#1 RSA 则原样规范化输出；非 RSA 或位数不足则抛 DeployError。
     """
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
@@ -51,6 +55,8 @@ def ensure_rsa_private_key_pkcs1(pem: str) -> str:
     key = serialization.load_pem_private_key(pem.encode(), password=None)
     if not isinstance(key, rsa_mod.RSAPrivateKey):
         raise DeployError("CLB requires RSA private key; got non-RSA key")
+    if key.key_size < min_bits:
+        raise DeployError(f"CLB requires RSA private key>={min_bits} bits; got {key.key_size}")
     return key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.TraditionalOpenSSL,

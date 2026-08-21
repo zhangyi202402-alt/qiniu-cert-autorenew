@@ -19,7 +19,8 @@ class CertIssuePlan:
     primary_domain: str
     dns_hook: str
     domain_args: str  # 已 shell 转义的 "-d a -d b"
-    key_type: str
+    key_type: str  # 配置中的 key_type（如 rsa-2048 / ec-256）
+    keylength: str  # 传给 acme.sh --keylength（如 2048 / ec-256）
     cert_dir: str  # acme 证书目录名，如 example.com_ecc 或 example.com
     deploy_hook: str  # acme.sh --deploy-hook 名称
 
@@ -47,6 +48,47 @@ def acme_cert_dir(primary_domain: str, key_type: str) -> str:
     if kt.startswith("ec") or "ecc" in kt:
         return f"{primary_domain}_ecc"
     return primary_domain
+
+
+def acme_keylength(key_type: str) -> str:
+    """
+    将配置 key_type 映射为 acme.sh --keylength 合法值。
+
+    acme.sh 只接受 2048/3072/4096/8192 或 ec-256/ec-384/ec-521，
+    不接受 rsa-2048 这类前缀写法。
+    """
+    raw = key_type.strip()
+    kt = raw.lower().replace("_", "-")
+    aliases = {
+        "rsa-2048": "2048",
+        "rsa2048": "2048",
+        "2048": "2048",
+        "rsa-3072": "3072",
+        "rsa3072": "3072",
+        "3072": "3072",
+        "rsa-4096": "4096",
+        "rsa4096": "4096",
+        "4096": "4096",
+        "rsa-8192": "8192",
+        "rsa8192": "8192",
+        "8192": "8192",
+        "ec-256": "ec-256",
+        "ec256": "ec-256",
+        "ecc": "ec-256",
+        "ec-384": "ec-384",
+        "ec384": "ec-384",
+        "ec-521": "ec-521",
+        "ec521": "ec-521",
+    }
+    if kt in aliases:
+        return aliases[kt]
+    if kt.startswith("rsa-") and kt[4:].isdigit():
+        return kt[4:]
+    if kt.isdigit():
+        return kt
+    if kt.startswith("ec-"):
+        return kt
+    raise ValueError(f"unsupported key_type for acme.sh --keylength: {key_type!r}")
 
 
 def acme_days_arg(config: AppConfig) -> str:
@@ -108,6 +150,7 @@ def build_issue_plans(config: AppConfig) -> list[CertIssuePlan]:
     for cert in config.certificates:
         primary = primary_issue_domain(cert.issue_domains)
         key_type = effective_key_type(cert, config.acme)
+        keylength = acme_keylength(key_type)
         plans.append(
             CertIssuePlan(
                 name=cert.name,
@@ -115,6 +158,7 @@ def build_issue_plans(config: AppConfig) -> list[CertIssuePlan]:
                 dns_hook=dns_hook_name(cert.dns_provider),
                 domain_args=domain_args_shell(cert.issue_domains),
                 key_type=key_type,
+                keylength=keylength,
                 cert_dir=acme_cert_dir(primary, key_type),
                 deploy_hook=deploy_hook_for(cert),
             )
@@ -146,7 +190,7 @@ def _print_issue_plans(config_path: str) -> None:
                 plan.primary_domain,
                 plan.dns_hook,
                 plan.domain_args,
-                plan.key_type,
+                plan.keylength,
                 plan.cert_dir,
                 plan.deploy_hook,
             ]

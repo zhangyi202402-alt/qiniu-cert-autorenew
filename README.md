@@ -70,12 +70,13 @@ Docker 与裸机共用 **一份 `config.yaml`**，运行时数据均在项目 `.
 cp .env.example .env
 cp config.example.yaml config.yaml
 # 编辑 .env 与 config.yaml
+# 若使用阿里云 CLB：填写 ALIYUN_AK/SK，并配置 targets type: aliyun_clb（见 docs/CLB.md）
 
 docker compose --profile setup run --rm setup   # 首次签发 + 部署
 docker compose up -d scheduler                  # 定时续签 + 探活
 ```
 
-Compose 将 `./config.yaml` 与 `./.local` 挂入容器，与裸机共用同一套数据。
+Compose 将 `./config.yaml` 与 `./.local` 挂入容器，与裸机共用同一套数据。CLB 与七牛共用同一 scheduler。
 
 **定时任务**（`TZ=Asia/Shanghai`）：每天 00:08 acme 续签；08:15 TLS 探活 + cleanup。
 

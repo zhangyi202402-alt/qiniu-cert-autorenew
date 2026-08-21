@@ -98,3 +98,43 @@ def test_clb_deploy_uploads_sets_listener_and_extension(tmp_path: Path, monkeypa
     assert "clb:cn-hangzhou:lb-1:443" in state
     assert state["clb:cn-hangzhou:lb-1:443"].current_cert_id == "cert-new"
     assert state["clb:cn-hangzhou:lb-1:443:api.example.com"].current_cert_id == "cert-new"
+
+
+def test_cleanup_skips_shared_cert_id(tmp_path: Path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from qiniu_cert.state import DomainState, StateStore
+
+    cfg = AppConfig(
+        qiniu_ak="",
+        qiniu_sk="",
+        aliyun_ak="ak",
+        aliyun_sk="sk",
+        certificates=[],
+        state_file=tmp_path / "state.json",
+    )
+    provider = AliyunClbProvider(cfg)
+    mock = MagicMock()
+    provider.client = mock
+
+    store = StateStore(cfg.state_file)
+    due = (datetime.now(timezone.utc) - timedelta(days=1)).replace(microsecond=0).isoformat()
+    # 监听 A 的 previous 是旧证 old；监听 B 仍把 old 当作 current
+    store.save(
+        {
+            "clb:cn-hangzhou:lb-1:443": DomainState(
+                current_cert_id="cert-new",
+                previous_cert_id="old",
+                previous_cleanup_after=due,
+            ),
+            "clb:cn-hangzhou:lb-1:443:api.example.com": DomainState(
+                current_cert_id="old",
+                previous_cert_id="",
+                previous_cleanup_after="",
+            ),
+        }
+    )
+
+    deleted = provider.cleanup_old_certs()
+    assert deleted == []
+    mock.delete_server_certificate.assert_not_called()

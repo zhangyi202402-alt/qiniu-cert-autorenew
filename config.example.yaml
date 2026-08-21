@@ -78,7 +78,7 @@ certificates:
   # - name: example-clb
   #   issue_domains:
   #     - www.example.com
-  #   key_type: rsa-2048
+  #   key_type: rsa-2048   # 配置名；acme.sh 实际使用 --keylength 2048
   #   dns_provider: dns_ali
   #   dns_env:
   #     ali_key: Ali_Key

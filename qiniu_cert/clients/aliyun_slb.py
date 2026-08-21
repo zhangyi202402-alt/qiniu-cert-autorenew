@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 API_VERSION = "2014-05-15"
 DEFAULT_ENDPOINT = "https://slb.aliyuncs.com"
+_SUCCESS_CODES = frozenset({"", "OK", "Success", "200"})
 
 
 class AliyunSlbError(Exception):
@@ -28,6 +29,10 @@ class AliyunSlbError(Exception):
 def _percent_encode(value: str) -> str:
     # 阿里云签名要求：保留字符外编码，且 + → %20，* → %2A，~ 不编码
     return quote(str(value), safe="~")
+
+
+def _rpc_error_message(payload: dict[str, Any], fallback: str) -> str:
+    return str(payload.get("Message") or payload.get("message") or fallback)
 
 
 class AliyunSlbClient:
@@ -59,6 +64,30 @@ class AliyunSlbClient:
         ).digest()
         return base64.b64encode(digest).decode("utf-8")
 
+    def _raise_if_error(self, resp: requests.Response, payload: dict[str, Any]) -> None:
+        """
+        HTTP 非 2xx，或 JSON 带业务错误 Code 时抛出 AliyunSlbError。
+
+        成功响应通常只有 RequestId + 业务字段，不含错误 Code。
+        """
+        if resp.status_code >= 400:
+            code = payload.get("Code")
+            raise AliyunSlbError(
+                _rpc_error_message(payload, resp.text[:300]),
+                code=str(code) if code is not None else str(resp.status_code),
+            )
+
+        code = payload.get("Code")
+        if code is None:
+            return
+        code_s = str(code)
+        if code_s in _SUCCESS_CODES:
+            return
+        raise AliyunSlbError(
+            _rpc_error_message(payload, code_s),
+            code=code_s,
+        )
+
     def _rpc(self, action: str, extra: dict[str, Any]) -> dict[str, Any]:
         params: dict[str, str] = {
             "Format": "JSON",
@@ -87,34 +116,10 @@ class AliyunSlbClient:
         except Exception as exc:
             raise AliyunSlbError(f"invalid JSON response: {resp.text[:200]}") from exc
 
-        if resp.status_code >= 400 or "Code" in payload and payload.get("Code") not in (
-            None,
-            "",
-            "200",
-        ):
-            # 成功响应通常无 Code，或仅有 RequestId
-            code = payload.get("Code")
-            if code and code not in ("OK", "Success"):
-                message = payload.get("Message") or payload.get("Message") or str(payload)
-                # 部分错误体带 Code
-                if resp.status_code >= 400 or code not in (None,):
-                    if "ServerCertificateId" not in payload and "DomainExtensions" not in payload:
-                        if code:
-                            raise AliyunSlbError(str(message), code=str(code))
+        if not isinstance(payload, dict):
+            raise AliyunSlbError(f"unexpected response type: {type(payload)}")
 
-        if resp.status_code >= 400:
-            raise AliyunSlbError(
-                payload.get("Message") or resp.text[:300],
-                code=str(payload.get("Code")) if payload.get("Code") else None,
-            )
-
-        # 明确错误字段
-        if payload.get("Code") and "ServerCertificateId" not in payload:
-            # Describe 类成功也可能没有 ServerCertificateId
-            err_code = str(payload["Code"])
-            if err_code not in ("OK", "Success") and "RequestId" in payload and len(payload) <= 3:
-                raise AliyunSlbError(str(payload.get("Message", err_code)), code=err_code)
-
+        self._raise_if_error(resp, payload)
         return payload
 
     def upload_server_certificate(

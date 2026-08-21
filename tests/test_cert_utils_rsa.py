@@ -66,6 +66,13 @@ def test_assert_certificate_rsa_rejects_ec() -> None:
         assert_certificate_rsa(pem)
 
 
+def test_assert_certificate_rsa_rejects_1024() -> None:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    pem = _make_leaf_pem(key)
+    with pytest.raises(DeployError, match="2048"):
+        assert_certificate_rsa(pem)
+
+
 def test_assert_certificate_rsa_accepts_rsa() -> None:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pem = _make_leaf_pem(key)

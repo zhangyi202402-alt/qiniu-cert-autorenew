@@ -170,26 +170,20 @@ class AliyunClbProvider:
     def cleanup_old_certs(self) -> list[str]:
         deleted: list[str] = []
         states = self.state.load()
-        current_ids = {
-            s.current_cert_id for s in states.values() if s.current_cert_id
-        }
 
         for domain, cert_id in self.state.list_pending_cleanup():
             if not domain.startswith("clb:"):
                 continue
-            # 仍被其它 state 当作 current 则跳过
-            if cert_id in current_ids:
-                # 排除自身 previous：current_ids 含所有 current；若仅自己 previous 等于别人 current 才跳过
-                still_used = any(
-                    k != domain and st.current_cert_id == cert_id
-                    for k, st in states.items()
+            # 仍被其它 state 当作 current 则跳过（同 region 共用 ServerCertificateId）
+            still_used = any(
+                k != domain and st.current_cert_id == cert_id for k, st in states.items()
+            )
+            if still_used:
+                logger.warning(
+                    "skip delete CLB cert %s still referenced as current elsewhere",
+                    cert_id,
                 )
-                if still_used:
-                    logger.warning(
-                        "skip delete CLB cert %s still referenced as current elsewhere",
-                        cert_id,
-                    )
-                    continue
+                continue
 
             # region from key: clb:{region}:{lb}:{port}[:domain]
             parts = domain.split(":")

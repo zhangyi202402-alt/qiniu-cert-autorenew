@@ -13,7 +13,7 @@ certificates:
   - name: example-clb
     issue_domains:
       - www.example.com
-    key_type: rsa-2048          # CLB 强制 RSA，禁止 ec-256
+    key_type: rsa-2048          # CLB 强制 RSA；签发时映射为 acme.sh --keylength 2048
     dns_provider: dns_ali
     dns_env:
       ali_key: Ali_Key
@@ -50,12 +50,28 @@ slb:SetDomainExtensionAttribute
 
 ## 流程
 
-1. `acme.sh` 按证书 `key_type` 签发（CLB 用 `rsa-2048`）
+1. `acme.sh` 按证书 `key_type` 签发；配置写 `rsa-2048`，脚本映射为 `--keylength 2048`
 2. deploy-hook `clb_wrapper`（或混部时 `qiniu_wrapper`）调用 `cli deploy`
 3. `UploadServerCertificate` → `SetLoadBalancerHTTPSListenerAttribute`
 4. 若有 `domain_extensions`：Describe → `SetDomainExtensionAttribute`
 5. 按域名 TLS 探活（SNI）→ 写 `state.json`（key 形如 `clb:{region}:{lb_id}:{port}`）
 6. `old_cert_cleanup_days` 后删除旧 `ServerCertificateId`（仍被其它 state 引用则跳过）
+
+## Docker
+
+与七牛共用同一 Compose。在 `.env` 增加 `ALIYUN_AK` / `ALIYUN_SK`（或 `ALIBABA_CLOUD_*`），`config.yaml` 写上 `aliyun_clb` target 即可：
+
+```bash
+docker compose --profile setup run --rm setup
+docker compose up -d scheduler
+```
+
+## 验收门禁（DoD）
+
+- [ ] `PYTHONPATH=. pytest tests/ -q` 全绿
+- [ ] staging：`rsa-2048` 证书 issue 成功（确认 acme 使用 `--keylength 2048`）
+- [ ] 换绑 CLB 监听 +（若有）扩展域后，`openssl s_client -servername` 校验
+- [ ] 七牛现网配置回归未受影响
 
 ## 风险
 

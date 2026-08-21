@@ -23,8 +23,8 @@ if [[ "$("${PYTHON}" -c "from qiniu_cert.config import load_config; print(1 if l
   export NO_ARI=1
 fi
 
-while IFS=$'\t' read -r name primary dns_hook domain_args key_type cert_dir deploy_hook; do
-  echo "=== Certificate: ${name} (${primary}) hook=${deploy_hook} key=${key_type} ==="
+while IFS=$'\t' read -r name primary dns_hook domain_args keylength cert_dir deploy_hook; do
+  echo "=== Certificate: ${name} (${primary}) hook=${deploy_hook} keylength=${keylength} ==="
   echo "--- DNS TXT before issue ---"
   "${PYTHON}" -m qiniu_cert.dns_check "${CONFIG}" "${name}"
   FORCE_ARGS=()
@@ -32,7 +32,7 @@ while IFS=$'\t' read -r name primary dns_hook domain_args key_type cert_dir depl
     FORCE_ARGS=(--force)
   fi
   # shellcheck disable=SC2086
-  if ! acme.sh --home "${ACME_HOME}" --issue --dns "${dns_hook}" ${domain_args} --keylength "${key_type}" --days "${ACME_DAYS}" "${FORCE_ARGS[@]}"; then
+  if ! acme.sh --home "${ACME_HOME}" --issue --dns "${dns_hook}" ${domain_args} --keylength "${keylength}" --days "${ACME_DAYS}" "${FORCE_ARGS[@]}"; then
     echo "--- DNS TXT after failed issue ---"
     "${PYTHON}" -m qiniu_cert.dns_check "${CONFIG}" "${name}"
     exit 1

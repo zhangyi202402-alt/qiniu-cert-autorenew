@@ -5,6 +5,7 @@ from pathlib import Path
 from qiniu_cert.acme_plan import (
     acme_cert_dir,
     acme_days_arg,
+    acme_keylength,
     build_issue_plans,
     dns_env_shell,
     domain_args_shell,
@@ -26,9 +27,18 @@ def test_domain_args_shell_separate_d_flags():
     assert "-d '*.b.com'" in args
 
 
+def test_acme_keylength_maps_rsa_aliases():
+    assert acme_keylength("rsa-2048") == "2048"
+    assert acme_keylength("rsa2048") == "2048"
+    assert acme_keylength("2048") == "2048"
+    assert acme_keylength("ec-256") == "ec-256"
+    assert acme_keylength("ec-384") == "ec-384"
+
+
 def test_acme_cert_dir_by_key_type():
     assert acme_cert_dir("example.com", "ec-256") == "example.com_ecc"
     assert acme_cert_dir("example.com", "rsa2048") == "example.com"
+    assert acme_cert_dir("example.com", "rsa-2048") == "example.com"
 
 
 def test_acme_days_arg():
@@ -102,6 +112,7 @@ def test_build_issue_plans_clb_uses_rsa_and_clb_hook():
     )
     plans = build_issue_plans(config)
     assert plans[0].key_type == "rsa-2048"
+    assert plans[0].keylength == "2048"
     assert plans[0].cert_dir == "www.example.com"
     assert plans[0].deploy_hook == "clb_wrapper"
 

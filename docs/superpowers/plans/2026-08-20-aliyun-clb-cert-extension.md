@@ -73,6 +73,19 @@ acme.sh --cron / --deploy-hook
 
 ---
 
+## Execution status (2026-08-21)
+
+Implemented on branch `feat/aliyun-clb-cert-extension`. Follow-up white-box fixes:
+
+- P0: `acme_keylength()` maps `rsa-2048` → acme `--keylength 2048`
+- P1: RSA min 2048-bit assert + cleanup shared-id unit test
+- P2: SLB `_rpc` error handling cleaned; dead config branch removed
+- P3: CLB/Docker DoD documented in `docs/CLB.md`
+
+Task 8 staging against real CLB remains a manual gate.
+
+---
+
 ### Task 1: 配置模型 — targets 与向后兼容
 
 **Files:**

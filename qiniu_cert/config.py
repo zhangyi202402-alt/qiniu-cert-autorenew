@@ -234,10 +234,7 @@ def load_config(path: str | Path) -> AppConfig:
             key_type=item.get("key_type"),
             targets=targets,
         )
-        # 兼容：旧配置只有 qiniu_cdn_domains
-        if not cert.targets and qiniu_domains:
-            pass  # iter_targets 会合成
-        elif not cert.targets and not qiniu_domains:
+        if not cert.targets and not qiniu_domains:
             raise ValueError(
                 f"certificate {cert.name!r} needs targets or qiniu_cdn_domains"
             )
