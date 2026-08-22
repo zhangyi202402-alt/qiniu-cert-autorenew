@@ -95,6 +95,7 @@ certificates:
 # aliyun:
 #   access_key: "${ALIYUN_AK}"
 #   secret_key: "${ALIYUN_SK}"
+#   cas_certificate_region: cn-hangzhou   # 证书服务地域（中国内地固定 cn-hangzhou）
 
 # 告警（钉钉 / 飞书 webhook）
 notify:

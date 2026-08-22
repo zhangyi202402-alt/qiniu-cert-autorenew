@@ -20,14 +20,80 @@ def read_pem(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _load_leaf_cert(fullchain_pem: str) -> x509.Certificate:
+def split_pem_certificates(fullchain_pem: str) -> list[str]:
+    """将 PEM 文本拆成单张证书（含 BEGIN/END 行）。"""
+    certs: list[str] = []
     for block in fullchain_pem.split("-----END CERTIFICATE-----"):
         block = block.strip()
         if not block:
             continue
-        pem = block + "\n-----END CERTIFICATE-----\n"
-        return x509.load_pem_x509_certificate(pem.encode(), default_backend())
-    raise DeployError("no certificate found in fullchain PEM")
+        certs.append(block + "\n-----END CERTIFICATE-----\n")
+    return certs
+
+
+def _load_leaf_cert(fullchain_pem: str) -> x509.Certificate:
+    certs = split_pem_certificates(fullchain_pem)
+    if not certs:
+        raise DeployError("no certificate found in fullchain PEM")
+    return x509.load_pem_x509_certificate(certs[0].encode(), default_backend())
+
+
+def cas_user_certificate_pem(fullchain_pem: str) -> str:
+    """证书服务自定义上传：保留 acme fullchain 全部 PEM（含交叉签中间证）。"""
+    parts = split_pem_certificates(fullchain_pem)
+    if not parts:
+        raise DeployError("no certificate found in fullchain PEM")
+    return "".join(parts)
+
+
+def sanitize_cas_certificate_name(name: str, *, max_len: int = 63) -> str:
+    """CAS UploadUserCertificate Name：最长 63，允许字母数字下划线等。"""
+    cleaned = []
+    for ch in name:
+        if ch.isalnum() or ch in "._-*":
+            cleaned.append(ch)
+        else:
+            cleaned.append("-")
+    out = "".join(cleaned).strip("-._*")
+    return (out or "cert")[:max_len]
+
+
+def clb_server_certificate_pem(fullchain_pem: str) -> str:
+    """
+    CLB UploadServerCertificate 用的公钥链：叶证书 + 中间证，去掉公信根/交叉根。
+
+    Let's Encrypt 新链可能含 Root YR 等交叉证书；整链上传会报
+    CertificateFormatInvalid。叶证书若自签则原样保留。
+    """
+    kept: list[str] = []
+    for idx, pem in enumerate(split_pem_certificates(fullchain_pem)):
+        cert = x509.load_pem_x509_certificate(pem.encode(), default_backend())
+        if idx > 0 and cert.subject == cert.issuer:
+            break
+        cn_attrs = cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+        cn = str(cn_attrs[0].value) if cn_attrs else ""
+        if idx > 0 and (cn.startswith("Root ") or cn.startswith("ISRG Root")):
+            break
+        kept.append(pem)
+        if idx == 0 and cert.subject == cert.issuer:
+            break
+    if not kept:
+        raise DeployError("no usable certificates for CLB upload")
+    return "".join(kept)
+
+
+def sanitize_server_certificate_name(name: str, *, max_len: int = 80) -> str:
+    """CLB ServerCertificateName：字母开头，仅字母数字 . _ -。"""
+    cleaned = []
+    for ch in name:
+        if ch.isalnum() or ch in "._-":
+            cleaned.append(ch)
+        else:
+            cleaned.append("-")
+    out = "".join(cleaned).strip("-._")
+    if not out or not out[0].isalpha():
+        out = f"cert-{out}" if out else "cert"
+    return out[:max_len]
 
 
 def assert_certificate_rsa(fullchain_pem: str, *, min_bits: int = 2048) -> None:

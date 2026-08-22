@@ -144,6 +144,50 @@ class AliyunSlbClient:
             raise AliyunSlbError(f"UploadServerCertificate missing ServerCertificateId: {payload}")
         return str(cert_id)
 
+    def upload_server_certificate_from_cas(
+        self,
+        *,
+        region_id: str,
+        aliyun_certificate_id: str,
+        aliyun_certificate_region_id: str,
+        server_certificate_name: str,
+    ) -> str:
+        """
+        将证书服务中的证书部署到 CLB 地域，返回 ServerCertificateId。
+
+        AliCloudCertificateRegionId 为证书服务地域（中国内地固定 cn-hangzhou），
+        与 CLB 实例所在 RegionId 不同。
+        """
+        payload = self._rpc(
+            "UploadServerCertificate",
+            {
+                "RegionId": region_id,
+                "AliCloudCertificateId": aliyun_certificate_id,
+                "AliCloudCertificateRegionId": aliyun_certificate_region_id,
+                "ServerCertificateName": server_certificate_name,
+            },
+        )
+        cert_id = payload.get("ServerCertificateId")
+        if not cert_id:
+            raise AliyunSlbError(
+                f"UploadServerCertificate (CAS) missing ServerCertificateId: {payload}"
+            )
+        return str(cert_id)
+
+    def describe_load_balancer_attribute(
+        self,
+        *,
+        region_id: str,
+        load_balancer_id: str,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "DescribeLoadBalancerAttribute",
+            {
+                "RegionId": region_id,
+                "LoadBalancerId": load_balancer_id,
+            },
+        )
+
     def set_https_listener_certificate(
         self,
         *,

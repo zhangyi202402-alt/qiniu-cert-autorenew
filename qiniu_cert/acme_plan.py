@@ -148,6 +148,8 @@ def deploy_hook_for(cert) -> str:
 def build_issue_plans(config: AppConfig) -> list[CertIssuePlan]:
     plans: list[CertIssuePlan] = []
     for cert in config.certificates:
+        if not cert.enabled:
+            continue
         primary = primary_issue_domain(cert.issue_domains)
         key_type = effective_key_type(cert, config.acme)
         keylength = acme_keylength(key_type)

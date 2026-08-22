@@ -7,6 +7,7 @@ export ACME_INSTALL_FORCE=1
 source "$(dirname "$0")/bootstrap.sh"
 
 ln -sf "${ROOT}/scripts/qiniu_wrapper.sh" "${ACME_HOME}/deploy/qiniu_wrapper.sh"
+ln -sf "${ROOT}/scripts/clb_wrapper.sh" "${ACME_HOME}/deploy/clb_wrapper.sh"
 bash "$(dirname "$0")/acme-install.sh"
 
 exec "$@"

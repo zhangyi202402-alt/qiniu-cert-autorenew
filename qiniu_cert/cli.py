@@ -49,6 +49,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             issue_domain=args.domain,
             key_path=Path(args.key),
             fullchain_path=Path(args.fullchain),
+            skip_probe=bool(getattr(args, "skip_probe", False)),
         )
         print(f"deploy ok certID={cert_id}")
         return 0
@@ -92,6 +93,8 @@ def cmd_tls_probe_all(args: argparse.Namespace) -> int:
     from qiniu_cert.config import TargetAliyunClb, TargetQiniuCdn, iter_targets
 
     for cert in config.certificates:
+        if not cert.enabled:
+            continue
         hosts: list[tuple[str, bool]] = []  # (host, check_force)
         for t in iter_targets(cert):
             if isinstance(t, TargetQiniuCdn):
@@ -133,6 +136,11 @@ def main() -> int:
     p_dep.add_argument("-d", "--domain", required=True, help="ACME 签发主域名（匹配 config）")
     p_dep.add_argument("--key", required=True, help="私钥 PEM 路径")
     p_dep.add_argument("--fullchain", required=True, help="fullchain PEM 路径")
+    p_dep.add_argument(
+        "--skip-probe",
+        action="store_true",
+        help="跳过 TLS 探活，仅上传并换绑",
+    )
     p_dep.set_defaults(func=cmd_deploy)
 
     p_clean = sub.add_parser("cleanup", help="清理已到期的旧证书")

@@ -28,6 +28,37 @@ def test_upload_server_certificate_parses_id(monkeypatch) -> None:
     assert cid == "15015-cn-hangzhou"
 
 
+def test_upload_server_certificate_from_cas_parses_id(monkeypatch) -> None:
+    client = AliyunSlbClient("ak", "sk")
+    captured: dict = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["data"] = kwargs.get("data")
+
+        class R:
+            status_code = 200
+            text = "{}"
+
+            def json(self):
+                return {"ServerCertificateId": "slb-cert-from-cas", "RequestId": "r1"}
+
+        return R()
+
+    monkeypatch.setattr(client.session, "request", fake_request)
+    cid = client.upload_server_certificate_from_cas(
+        region_id="cn-beijing",
+        aliyun_certificate_id="775123",
+        aliyun_certificate_region_id="cn-hangzhou",
+        server_certificate_name="mycert01",
+    )
+    assert cid == "slb-cert-from-cas"
+    assert captured["data"]["AliCloudCertificateId"] == "775123"
+    assert captured["data"]["AliCloudCertificateRegionId"] == "cn-hangzhou"
+    assert captured["data"]["RegionId"] == "cn-beijing"
+    assert "ServerCertificate" not in captured["data"]
+    assert "PrivateKey" not in captured["data"]
+
+
 def test_describe_domain_extensions_list(monkeypatch) -> None:
     client = AliyunSlbClient("ak", "sk")
 

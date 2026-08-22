@@ -31,8 +31,13 @@ while IFS=$'\t' read -r name primary dns_hook domain_args keylength cert_dir dep
   if [[ "${ACME_FORCE:-}" == "1" ]]; then
     FORCE_ARGS=(--force)
   fi
+  # domain_args 已由 shlex.quote 转义（通配符需保留引号），必须用 eval 解析
+  force_args_str=""
+  if ((${#FORCE_ARGS[@]})); then
+    force_args_str=$(printf '%q ' "${FORCE_ARGS[@]}")
+  fi
   # shellcheck disable=SC2086
-  if ! acme.sh --home "${ACME_HOME}" --issue --dns "${dns_hook}" ${domain_args} --keylength "${keylength}" --days "${ACME_DAYS}" "${FORCE_ARGS[@]}"; then
+  if ! eval "acme.sh --home \"${ACME_HOME}\" --issue --dns \"${dns_hook}\" ${domain_args} --keylength \"${keylength}\" --days \"${ACME_DAYS}\" ${force_args_str}"; then
     echo "--- DNS TXT after failed issue ---"
     "${PYTHON}" -m qiniu_cert.dns_check "${CONFIG}" "${name}"
     exit 1

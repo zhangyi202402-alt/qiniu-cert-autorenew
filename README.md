@@ -1,12 +1,12 @@
 # qiniu-cert-autorenew
 
-Automated Let's Encrypt certificate renewal and deployment for Qiniu CDN (acme.sh + deploy wrapper).
+Automated Let's Encrypt certificate renewal and deployment for **Qiniu CDN** and **Aliyun CLB** (acme.sh + deploy wrapper).
 
-七牛 CDN HTTPS 证书全自动续签：ACME（Let's Encrypt）+ acme.sh + 自研 Deploy Wrapper。
+七牛 CDN / 阿里云 CLB HTTPS 证书全自动续签：ACME（Let's Encrypt）+ acme.sh + 自研 Deploy Wrapper。
 
 **Maintained by [卡拉丁 Kalading](https://www.kalading.com)**（北京卡拉丁汽车技术服务有限公司）· Author: **zhangyi**
 
-> **Disclaimer:** Open-source tool maintained by 北京卡拉丁汽车技术服务有限公司, not affiliated with or endorsed by Qiniu. "Qiniu" is a trademark of Qiniu Limited. Use of Qiniu APIs is subject to their terms of service.
+> **Disclaimer:** Open-source tool maintained by 北京卡拉丁汽车技术服务有限公司, not affiliated with or endorsed by Qiniu or Alibaba Cloud. "Qiniu" and "Alibaba Cloud" are trademarks of their respective owners. Use of their APIs is subject to their terms of service.
 
 ## 架构
 
@@ -16,7 +16,7 @@ acme.sh --cron（.local/acme）
   → deploy-hook qiniu_wrapper / clb_wrapper
   → DeployRouter
        ├─ 七牛 CDN：upload sslcert → 绑定域名
-       └─ 阿里云 CLB：UploadServerCertificate → 换 HTTPS 监听（+SNI 扩展域）
+       └─ 阿里云 CLB：CAS UploadUserCertificate → SLB 引用 → 换 HTTPS 监听（+SNI 扩展域）
   → TLS 探活 + .local/state/state.json
   → 旧证延迟清理
 ```
@@ -33,7 +33,9 @@ qiniu-cert-autorenew/
 │   ├── cli.py
 │   ├── config.py              # targets + 旧字段兼容
 │   ├── deploy.py              # DeployRouter
-│   ├── clients/aliyun_slb.py  # CLB OpenAPI
+│   ├── clients/
+│   │   ├── aliyun_cas.py      # 证书服务（CAS）上传
+│   │   └── aliyun_slb.py      # CLB OpenAPI
 │   └── providers/
 │       ├── qiniu_cdn.py
 │       └── aliyun_clb.py
@@ -59,8 +61,10 @@ Docker 与裸机共用 **一份 `config.yaml`**，运行时数据均在项目 `.
 ## 特性
 
 - 官方双端点 + 双鉴权（fusion QBox / api Qiniu）
-- 多 CDN 域名部署失败自动记录明细（成功域名保留新证，不回滚）
-- SAN 覆盖校验、TLS 探活（15min 重试）
+- **阿里云 CLB**：经 CAS 上传完整 PEM 链（含 LE 交叉签），再引用到 SLB 换绑
+- 多目标部署失败自动记录明细（成功目标保留新证，不回滚）
+- 证书 `enabled: false` 可跳过签发/探活/部署（便于维护窗口）
+- SAN 覆盖校验、TLS 探活（可 `--skip-probe` 或直连 CLB VIP）
 - 旧 certID 延迟清理（7 天）
 - 钉钉 / 飞书 webhook 告警
 
@@ -87,12 +91,14 @@ docker compose --profile tools run --rm renew   # 立即续签一轮
 docker compose --profile tools run --rm probe     # 仅探活 + cleanup
 ```
 
+构建时若需 HTTP 代理，可传 `HTTP_PROXY` / `HTTPS_PROXY` build-arg（镜像内运行时已清空代理）。
+
 ## 裸机：acme.sh 集成（核心）
 
 在 **git clone 目录**执行，与 Docker 使用相同的 `config.yaml` 和 `.local/`。
 
 ```bash
-git clone https://github.com/YOUR_ORG/qiniu-cert-autorenew.git
+git clone https://github.com/zhangyi202402-alt/qiniu-cert-autorenew.git
 cd qiniu-cert-autorenew
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp config.example.yaml config.yaml
@@ -105,7 +111,7 @@ bash scripts/install-cron.sh
 
 **续签时机**：`acme.renew_days`（默认 30）表示证书**到期前 N 天**开始续签；设为 `15` 即剩余约 15 天时申请新证。Let's Encrypt 启用 ARI 时 CA 可能略早建议续签；若需严格按 `renew_days`，设 `acme.no_ari: true`。
 
-确认 `.local/acme/{domain}_ecc/{domain}.conf` 含 `Le_DeployHook='qiniu_wrapper'`。
+确认 `.local/acme/{domain}_ecc/{domain}.conf` 含 `Le_DeployHook='qiniu_wrapper'`（CLB 证书为 `clb_wrapper`）。
 
 ## DNS 服务商（ACME DNS-01）
 
@@ -155,8 +161,13 @@ python3 -m qiniu_cert.cli deploy -c config.yaml -d example.com \
   --key .local/acme/example.com_ecc/example.com.key \
   --fullchain .local/acme/example.com_ecc/fullchain.cer
 
+# CLB 部署可跳过探活（例如公网仍指向旧证时）
+python3 -m qiniu_cert.cli deploy -c config.yaml -d www.example.com \
+  --key .local/acme/www.example.com/www.example.com.key \
+  --fullchain .local/acme/www.example.com/fullchain.cer --skip-probe
+
 python3 -m qiniu_cert.cli tls-probe -c config.yaml cdn.example.com --respect-config
-python3 -m qiniu_cert.cli tls-probe-all -c config.yaml   # cron 同款：全部 CDN 域名
+python3 -m qiniu_cert.cli tls-probe-all -c config.yaml   # cron 同款：全部目标域名
 python3 -m qiniu_cert.cli cleanup -c config.yaml
 ```
 
@@ -197,6 +208,8 @@ acme.sh --deploy -d example.com --deploy-hook qiniu_wrapper
 | 400322 | 证书有效期 < 30 天 | 正常 LE 新证 90 天；检查是否用了过期 PEM |
 | 400611 DELETE | 旧证仍绑定域名 | 等换绑 7 天后再 cleanup |
 | 续签成功 CDN 未换证 | 未 `--deploy` 保存 hook | `acme.sh --deploy -d ... --deploy-hook qiniu_wrapper` |
+| CLB CAS NoPermission | RAM 缺证书服务权限 | 增加 `yundun-cert:UploadUserCertificate`（见 docs/CLB.md） |
+| CLB 探活失败 | 公网域名未指向该 CLB | 使用 `probe_host` + VIP 直连，或 `deploy --skip-probe` |
 | cron 静默失败 | 输出重定向到 `.local/log/` | 查看 `acme-qiniu.log`；未装 acme 时先 `bash scripts/setup.sh` |
 | DNS TXT 添加失败 | DNS 凭据错误或权限不足 | 核对 `dns_provider` / `dns_env` / `.env`；腾讯云勿与 DNSPod 密钥混用 |
 

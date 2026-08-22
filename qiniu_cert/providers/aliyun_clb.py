@@ -8,10 +8,13 @@ import time
 from qiniu_cert.cert_utils import (
     DeployError,
     assert_certificate_rsa,
+    cas_user_certificate_pem,
     cert_covers_domain,
-    ensure_rsa_private_key_pkcs1,
+    sanitize_cas_certificate_name,
+    sanitize_server_certificate_name,
     tls_probe,
 )
+from qiniu_cert.clients.aliyun_cas import AliyunCasClient, AliyunCasError
 from qiniu_cert.clients.aliyun_slb import AliyunSlbClient, AliyunSlbError
 from qiniu_cert.config import AppConfig, CertificateConfig, TargetAliyunClb
 from qiniu_cert.state import StateStore
@@ -34,7 +37,38 @@ class AliyunClbProvider:
         if not config.aliyun_ak or not config.aliyun_sk:
             raise DeployError("aliyun access_key/secret_key required for CLB deploy")
         self.client = AliyunSlbClient(config.aliyun_ak, config.aliyun_sk)
+        self.cas = AliyunCasClient(config.aliyun_ak, config.aliyun_sk)
         self.state = state or StateStore(config.state_file)
+
+    def _upload_certificate_to_clb(
+        self,
+        *,
+        target: TargetAliyunClb,
+        cert_name: str,
+        key_pem: str,
+        fullchain_pem: str,
+    ) -> str:
+        """证书服务 UploadUserCertificate → CLB 引用 AliCloudCertificateId。"""
+        cas_name = sanitize_cas_certificate_name(cert_name)
+        cert_for_cas = cas_user_certificate_pem(fullchain_pem)
+        cas_cert_id = self.cas.upload_user_certificate(
+            name=cas_name,
+            cert=cert_for_cas,
+            key=key_pem,
+        )
+        logger.info("uploaded CAS user certificate CertId=%s", cas_cert_id)
+        new_id = self.client.upload_server_certificate_from_cas(
+            region_id=target.region_id,
+            aliyun_certificate_id=cas_cert_id,
+            aliyun_certificate_region_id=self.config.aliyun_cas_certificate_region,
+            server_certificate_name=cert_name,
+        )
+        logger.info(
+            "deployed CAS cert to CLB region=%s ServerCertificateId=%s",
+            target.region_id,
+            new_id,
+        )
+        return new_id
 
     def deploy(
         self,
@@ -43,9 +77,10 @@ class AliyunClbProvider:
         issue_domain: str,
         key_pem: str,
         fullchain_pem: str,
+        *,
+        skip_probe: bool = False,
     ) -> str:
         assert_certificate_rsa(fullchain_pem)
-        private_key = ensure_rsa_private_key_pkcs1(key_pem)
 
         probe_hosts = [target.probe_host or cert_cfg.issue_domains[0]]
         probe_hosts.extend(target.domain_extensions)
@@ -53,18 +88,18 @@ class AliyunClbProvider:
             if not cert_covers_domain(fullchain_pem, host):
                 raise DeployError(f"certificate SAN does not cover CLB domain: {host}")
 
-        cert_name = f"{cert_cfg.name}-{issue_domain}-{int(time.time())}"[:80]
+        cert_name = sanitize_server_certificate_name(
+            f"{cert_cfg.name}-{issue_domain}-{int(time.time())}"
+        )
         try:
-            new_id = self.client.upload_server_certificate(
-                region_id=target.region_id,
-                server_certificate=fullchain_pem,
-                private_key=private_key,
-                server_certificate_name=cert_name,
+            new_id = self._upload_certificate_to_clb(
+                target=target,
+                cert_name=cert_name,
+                key_pem=key_pem,
+                fullchain_pem=fullchain_pem,
             )
-        except AliyunSlbError as exc:
-            raise DeployError(f"UploadServerCertificate failed: {exc}") from exc
-
-        logger.info("uploaded CLB cert ServerCertificateId=%s", new_id)
+        except (AliyunCasError, AliyunSlbError) as exc:
+            raise DeployError(f"CLB certificate upload failed: {exc}") from exc
 
         failures: list[tuple[str, str]] = []
         successes: list[str] = []
@@ -78,10 +113,14 @@ class AliyunClbProvider:
                 listener_port=target.listener_port,
                 server_certificate_id=new_id,
             )
-            primary = target.probe_host or cert_cfg.issue_domains[0]
-            ok, msg = self._probe_with_retry(primary)
-            if not ok:
-                raise DeployError(f"probe failed for {primary}: {msg}")
+            if not skip_probe:
+                primary = target.probe_host or cert_cfg.issue_domains[0]
+                connect_host = self._resolve_probe_connect_host(target)
+                ok, msg = self._probe_with_retry(primary, connect_host=connect_host)
+                if not ok:
+                    raise DeployError(f"probe failed for {primary}: {msg}")
+            else:
+                logger.info("skip probe for %s", listener_key)
             self.state.update_after_deploy(
                 listener_key,
                 new_id,
@@ -118,9 +157,13 @@ class AliyunClbProvider:
                         domain_extension_id=str(item["DomainExtensionId"]),
                         server_certificate_id=new_id,
                     )
-                    ok, msg = self._probe_with_retry(domain)
-                    if not ok:
-                        raise DeployError(f"probe failed for {domain}: {msg}")
+                    if not skip_probe:
+                        connect_host = self._resolve_probe_connect_host(target)
+                        ok, msg = self._probe_with_retry(domain, connect_host=connect_host)
+                        if not ok:
+                            raise DeployError(f"probe failed for {domain}: {msg}")
+                    else:
+                        logger.info("skip probe for %s", ext_key)
                     self.state.update_after_deploy(
                         ext_key,
                         new_id,
@@ -144,13 +187,43 @@ class AliyunClbProvider:
             )
         return new_id
 
-    def _probe_with_retry(self, domain: str) -> tuple[bool, str]:
+    def _resolve_probe_connect_host(self, target: TargetAliyunClb) -> str | None:
+        """公网域名可能不解析到该 CLB，探活改直连 VIP（SNI 仍用 probe_host）。"""
+        try:
+            attr = self.client.describe_load_balancer_attribute(
+                region_id=target.region_id,
+                load_balancer_id=target.load_balancer_id,
+            )
+        except AliyunSlbError as exc:
+            logger.warning(
+                "DescribeLoadBalancerAttribute failed for %s: %s",
+                target.load_balancer_id,
+                exc,
+            )
+            return None
+        address = str(attr.get("Address") or "").strip()
+        if address:
+            logger.info(
+                "CLB probe connect_host=%s for %s",
+                address,
+                target.load_balancer_id,
+            )
+            return address
+        return None
+
+    def _probe_with_retry(
+        self,
+        domain: str,
+        *,
+        connect_host: str | None = None,
+    ) -> tuple[bool, str]:
         last_msg = "probe failed"
         for attempt in range(1, self.config.probe_retries + 1):
             ok, msg = tls_probe(
                 domain,
                 min_valid_days=self.config.min_valid_days,
                 server_hostname=domain,
+                connect_host=connect_host,
             )
             if ok:
                 logger.info("CLB probe ok %s: %s (attempt %d)", domain, msg, attempt)

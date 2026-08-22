@@ -44,10 +44,16 @@ class DeployService:
         key_path: Path,
         fullchain_path: Path,
         cert_cfg: CertificateConfig | None = None,
+        *,
+        skip_probe: bool = False,
     ) -> str:
         cert_cfg = cert_cfg or find_cert_by_issue_domain(self.config, issue_domain)
         if not cert_cfg:
             raise DeployError(f"no certificate config for issue domain: {issue_domain}")
+        if not cert_cfg.enabled:
+            raise DeployError(
+                f"certificate {cert_cfg.name!r} is disabled; skip deploy"
+            )
 
         key_pem = read_pem(key_path)
         fullchain_pem = read_pem(fullchain_path)
@@ -75,7 +81,14 @@ class DeployService:
                     parts.append(f"qiniu:{cert_id}" if len(targets) > 1 else cert_id)
                 elif isinstance(target, TargetAliyunClb):
                     clb = self._get_clb_provider()
-                    cert_id = clb.deploy(cert_cfg, target, issue_domain, key_pem, fullchain_pem)
+                    cert_id = clb.deploy(
+                        cert_cfg,
+                        target,
+                        issue_domain,
+                        key_pem,
+                        fullchain_pem,
+                        skip_probe=skip_probe,
+                    )
                     parts.append(f"clb:{cert_id}" if len(targets) > 1 else cert_id)
                 else:
                     failures.append(f"unknown target type: {getattr(target, 'type', target)}")

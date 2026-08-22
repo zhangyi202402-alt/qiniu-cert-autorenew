@@ -13,7 +13,11 @@ from cryptography.x509.oid import NameOID
 from qiniu_cert.cert_utils import (
     DeployError,
     assert_certificate_rsa,
+    cas_user_certificate_pem,
+    clb_server_certificate_pem,
     ensure_rsa_private_key_pkcs1,
+    sanitize_cas_certificate_name,
+    sanitize_server_certificate_name,
 )
 
 
@@ -77,3 +81,53 @@ def test_assert_certificate_rsa_accepts_rsa() -> None:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pem = _make_leaf_pem(key)
     assert_certificate_rsa(pem)
+
+
+def test_clb_server_certificate_pem_strips_root_yr() -> None:
+    leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    leaf = _make_leaf_pem(leaf_key)
+    # append a fake Root YR-like cert (self-signed Root CN)
+    root_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Root YR")])
+    root = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(root_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
+        .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=30))
+        .sign(root_key, hashes.SHA256())
+    )
+    root_pem = root.public_bytes(serialization.Encoding.PEM).decode()
+    # For strip logic on idx>0 Root CN: need non-self-signed intermediate-shaped root
+    # Use leaf alone + Root as second; Root CN triggers strip when idx>0
+    out = clb_server_certificate_pem(leaf + root_pem)
+    assert out.count("BEGIN CERTIFICATE") == 1
+
+
+def test_cas_user_certificate_pem_keeps_full_chain() -> None:
+    leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    leaf = _make_leaf_pem(leaf_key)
+    root_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Root YR")])
+    root = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(
+            x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "ISRG Root X1")])
+        )
+        .public_key(root_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
+        .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=30))
+        .sign(root_key, hashes.SHA256())
+    )
+    root_pem = root.public_bytes(serialization.Encoding.PEM).decode()
+    full = leaf + root_pem
+    assert cas_user_certificate_pem(full).count("BEGIN CERTIFICATE") == 2
+    assert clb_server_certificate_pem(full).count("BEGIN CERTIFICATE") == 1
+
+
+def test_sanitize_cas_certificate_name() -> None:
+    assert "*" in sanitize_cas_certificate_name("a-*.example.com-1")

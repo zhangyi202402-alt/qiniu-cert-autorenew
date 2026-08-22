@@ -60,12 +60,16 @@ def test_clb_deploy_uploads_sets_listener_and_extension(tmp_path: Path, monkeypa
         min_valid_days=1,
     )
     provider = AliyunClbProvider(cfg)
-    mock = MagicMock()
-    mock.upload_server_certificate.return_value = "cert-new"
-    mock.describe_domain_extensions.return_value = [
+    mock_slb = MagicMock()
+    mock_slb.upload_server_certificate_from_cas.return_value = "cert-new"
+    mock_slb.describe_load_balancer_attribute.return_value = {"Address": "1.2.3.4"}
+    mock_slb.describe_domain_extensions.return_value = [
         {"Domain": "api.example.com", "DomainExtensionId": "de-1"}
     ]
-    provider.client = mock
+    mock_cas = MagicMock()
+    mock_cas.upload_user_certificate.return_value = "775123"
+    provider.client = mock_slb
+    provider.cas = mock_cas
 
     monkeypatch.setattr(
         "qiniu_cert.providers.aliyun_clb.tls_probe",
@@ -87,9 +91,18 @@ def test_clb_deploy_uploads_sets_listener_and_extension(tmp_path: Path, monkeypa
     )
     new_id = provider.deploy(cert_cfg, target, "www.example.com", key_pem, fullchain)
     assert new_id == "cert-new"
-    mock.upload_server_certificate.assert_called_once()
-    mock.set_https_listener_certificate.assert_called_once()
-    mock.set_domain_extension_certificate.assert_called_once_with(
+    mock_cas.upload_user_certificate.assert_called_once()
+    mock_slb.upload_server_certificate_from_cas.assert_called_once_with(
+        region_id="cn-hangzhou",
+        aliyun_certificate_id="775123",
+        aliyun_certificate_region_id="cn-hangzhou",
+        server_certificate_name=mock_slb.upload_server_certificate_from_cas.call_args.kwargs[
+            "server_certificate_name"
+        ],
+    )
+    mock_slb.upload_server_certificate.assert_not_called()
+    mock_slb.set_https_listener_certificate.assert_called_once()
+    mock_slb.set_domain_extension_certificate.assert_called_once_with(
         region_id="cn-hangzhou",
         domain_extension_id="de-1",
         server_certificate_id="cert-new",

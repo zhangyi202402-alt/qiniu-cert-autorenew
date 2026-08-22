@@ -32,6 +32,18 @@ clb_wrapper_deploy() {
 
   export PYTHONPATH="${root}${PYTHONPATH:+:${PYTHONPATH}}"
 
+  # config 中 enabled: false 时跳过换绑（不触发探活）
+  if "${python}" -c "
+from qiniu_cert.config import load_config, find_cert_by_issue_domain
+import sys
+c = load_config(sys.argv[1])
+cert = find_cert_by_issue_domain(c, sys.argv[2])
+raise SystemExit(0 if (cert is not None and not cert.enabled) else 1)
+" "${config}" "${_cdomain}"; then
+    echo "clb_wrapper: certificate disabled, skip deploy for ${_cdomain}"
+    return 0
+  fi
+
   if ! "${python}" -m qiniu_cert.cli -c "${config}" deploy \
     -d "${_cdomain}" \
     --key "${_ckey}" \

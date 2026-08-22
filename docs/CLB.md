@@ -40,6 +40,10 @@ ALIYUN_SK=...
 ## RAM 最小权限
 
 ```
+# 数字证书管理服务（自定义证书上传）
+yundun-cert:UploadUserCertificate
+
+# CLB 引用证书并换绑
 slb:UploadServerCertificate
 slb:DeleteServerCertificate
 slb:SetLoadBalancerHTTPSListenerAttribute
@@ -52,10 +56,20 @@ slb:SetDomainExtensionAttribute
 
 1. `acme.sh` 按证书 `key_type` 签发；配置写 `rsa-2048`，脚本映射为 `--keylength 2048`
 2. deploy-hook `clb_wrapper`（或混部时 `qiniu_wrapper`）调用 `cli deploy`
-3. `UploadServerCertificate` → `SetLoadBalancerHTTPSListenerAttribute`
-4. 若有 `domain_extensions`：Describe → `SetDomainExtensionAttribute`
-5. 按域名 TLS 探活（SNI）→ 写 `state.json`（key 形如 `clb:{region}:{lb_id}:{port}`）
-6. `old_cert_cleanup_days` 后删除旧 `ServerCertificateId`（仍被其它 state 引用则跳过）
+3. **证书服务** `UploadUserCertificate`（完整 PEM 链）→ **CLB** `UploadServerCertificate` 引用 `AliCloudCertificateId`
+4. `SetLoadBalancerHTTPSListenerAttribute` 换绑默认监听
+5. 若有 `domain_extensions`：Describe → `SetDomainExtensionAttribute`
+6. 按域名 TLS 探活（SNI）→ 写 `state.json`（key 形如 `clb:{region}:{lb_id}:{port}`）
+7. `old_cert_cleanup_days` 后删除旧 `ServerCertificateId`（仍被其它 state 引用则跳过）
+
+> `AliCloudCertificateRegionId` 为中国内地固定 `cn-hangzhou`（与 CLB 所在地域无关），可在 `aliyun.cas_certificate_region` 覆盖。
+
+```yaml
+aliyun:
+  access_key: "${ALIYUN_AK}"
+  secret_key: "${ALIYUN_SK}"
+  cas_certificate_region: cn-hangzhou   # 可选，默认 cn-hangzhou
+```
 
 ## Docker
 
@@ -65,13 +79,6 @@ slb:SetDomainExtensionAttribute
 docker compose --profile setup run --rm setup
 docker compose up -d scheduler
 ```
-
-## 验收门禁（DoD）
-
-- [ ] `PYTHONPATH=. pytest tests/ -q` 全绿
-- [ ] staging：`rsa-2048` 证书 issue 成功（确认 acme 使用 `--keylength 2048`）
-- [ ] 换绑 CLB 监听 +（若有）扩展域后，`openssl s_client -servername` 校验
-- [ ] 七牛现网配置回归未受影响
 
 ## 风险
 

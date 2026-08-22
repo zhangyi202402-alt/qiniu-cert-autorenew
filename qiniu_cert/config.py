@@ -81,6 +81,7 @@ class CertificateConfig:
     dns_env: dict[str, str] = field(default_factory=dict)
     key_type: str | None = None
     targets: list[DeployTarget] = field(default_factory=list)
+    enabled: bool = True
 
 
 @dataclass
@@ -98,6 +99,7 @@ class AppConfig:
     min_valid_days: int = 30
     aliyun_ak: str = ""
     aliyun_sk: str = ""
+    aliyun_cas_certificate_region: str = "cn-hangzhou"
 
 
 def _resolve_path(config_path: Path, value: str | Path) -> Path:
@@ -233,7 +235,12 @@ def load_config(path: str | Path) -> AppConfig:
             dns_env=dict(item.get("dns_env", {})),
             key_type=item.get("key_type"),
             targets=targets,
+            enabled=bool(item.get("enabled", True)),
         )
+        if not cert.enabled:
+            # 仍保留配置便于再启用；跳过校验与后续调度
+            certs.append(cert)
+            continue
         if not cert.targets and not qiniu_domains:
             raise ValueError(
                 f"certificate {cert.name!r} needs targets or qiniu_cdn_domains"
@@ -248,12 +255,14 @@ def load_config(path: str | Path) -> AppConfig:
         certs.append(cert)
 
     aliyun_ak, aliyun_sk = _resolve_aliyun_creds(aliyun)
+    cas_region = str(aliyun.get("cas_certificate_region") or "cn-hangzhou").strip()
 
     return AppConfig(
         qiniu_ak=qiniu.get("access_key", ""),
         qiniu_sk=qiniu.get("secret_key", ""),
         aliyun_ak=aliyun_ak,
         aliyun_sk=aliyun_sk,
+        aliyun_cas_certificate_region=cas_region,
         certificates=certs,
         state_file=_resolve_path(config_path, paths.get("state_file", ".local/state/state.json")),
         acme=acme,
