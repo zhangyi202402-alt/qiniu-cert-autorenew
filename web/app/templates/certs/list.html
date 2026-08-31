@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% block title %}我的证书 — SSL 证书服务{% endblock %}
 {% block content %}
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-  <h1 style="margin:0;">我的证书</h1>
-  <a class="btn" href="/certs/add">添加域名</a>
+<div class="page-head">
+  <h1>我的证书</h1>
+  <a href="/certs/add" style="text-decoration:none;">
+    <md-filled-button type="button">添加域名</md-filled-button>
+  </a>
 </div>
-{% if err %}<div class="error">{{ err }}</div>{% endif %}
+{% if err %}<div class="banner banner--err">{{ err }}</div>{% endif %}
 {% if not has_profiles %}
 <div class="warn">尚未创建配置档。请先配置 <a href="/settings/credentials">凭证</a> 与 <a href="/settings/profiles">配置档</a>，否则验证通过后无法签发。</div>
 {% endif %}
-<div class="panel">
+<section class="section-card">
   {% if not certs %}
-  <p class="hint">还没有证书。点击「添加域名」开始。</p>
+  <p class="supporting">还没有证书。点击「添加域名」开始。</p>
   {% else %}
-  <table>
+  <table class="data">
     <thead>
       <tr>
         <th>名称</th>
@@ -32,21 +34,21 @@
         <td><span class="badge {{ c.status }}">{{ c.status }}</span></td>
         <td><span class="badge {{ c.verification_status }}">{{ c.verification_status }}</span></td>
         <td>{% if c.expires_at %}{{ c.expires_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
-        <td class="actions">
-          <a href="/certs/{{ c.id }}/verify">验证</a>
-          <a href="/certs/{{ c.id }}/edit">编辑</a>
+        <td>
+          <a href="/certs/{{ c.id }}/verify" style="text-decoration:none;"><md-text-button type="button">验证</md-text-button></a>
+          <a href="/certs/{{ c.id }}/edit" style="text-decoration:none;"><md-text-button type="button">编辑</md-text-button></a>
           {% if c.status == 'failed' and c.verification_status == 'verified' %}
-          <form class="actions" method="post" action="/certs/{{ c.id }}/retry">
+          <form method="post" action="/certs/{{ c.id }}/retry" style="display:inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit">重试</button>
+            <md-filled-tonal-button type="submit">重试</md-filled-tonal-button>
           </form>
           {% endif %}
-          <form class="actions" method="post" action="/certs/{{ c.id }}/toggle">
+          <form method="post" action="/certs/{{ c.id }}/toggle" style="display:inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="secondary">{% if c.enabled %}禁用{% else %}启用{% endif %}</button>
+            <md-outlined-button type="submit">{% if c.enabled %}禁用{% else %}启用{% endif %}</md-outlined-button>
           </form>
-          {% if c.last_error %}<div class="hint" style="margin-top:0.35rem;color:#a32020;">{{ c.last_error[:120] }}</div>{% endif %}
-          {% if c.verification_status == 'lost' %}<div class="warn" style="margin-top:0.35rem;">归属验证已失效，已停止续签。请恢复 TXT 后重新验证。</div>{% endif %}
+          {% if c.last_error %}<div class="supporting" style="color:var(--md-sys-color-error);">{{ c.last_error[:120] }}</div>{% endif %}
+          {% if c.verification_status == 'lost' %}<div class="warn">归属验证已失效，已停止续签。请恢复 TXT 后重新验证。</div>{% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -68,5 +70,5 @@
     })();
   </script>
   {% endif %}
-</div>
+</section>
 {% endblock %}

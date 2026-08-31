@@ -87,7 +87,7 @@ def home(request: Request, user=Depends(get_current_user_optional)):
 
 
 @router.get("/settings/credentials", response_class=HTMLResponse)
-def credentials_page(
+def credentials_list_page(
     request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -98,13 +98,51 @@ def credentials_page(
         by_provider.setdefault(c.provider, []).append(c)
     return templates.TemplateResponse(
         request,
-        "settings/credentials.html",
+        "settings/credentials_list.html",
         _ctx(
             request,
             user=user,
             by_provider=by_provider,
             error=request.query_params.get("err"),
             ok=request.query_params.get("ok"),
+        ),
+    )
+
+
+@router.get("/settings/credentials/new", response_class=HTMLResponse)
+def credentials_new_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    return templates.TemplateResponse(
+        request,
+        "settings/credentials_new.html",
+        _ctx(
+            request,
+            user=user,
+            error=request.query_params.get("err"),
+        ),
+    )
+
+
+@router.get("/settings/credentials/{cred_id}/edit", response_class=HTMLResponse)
+def credentials_edit_page(
+    request: Request,
+    cred_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cred = credential_repo.get_credential(db, cred_id, user.id)
+    if not cred:
+        return RedirectResponse("/settings/credentials?err=凭证不存在", status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "settings/credentials_edit.html",
+        _ctx(
+            request,
+            user=user,
+            cred=cred,
+            error=request.query_params.get("err"),
         ),
     )
 
@@ -134,9 +172,11 @@ def credentials_create(
         )
         return RedirectResponse("/settings/credentials?ok=1", status_code=303)
     except CSRFError:
-        return RedirectResponse("/settings/credentials?err=csrf", status_code=303)
+        return RedirectResponse("/settings/credentials/new?err=csrf", status_code=303)
     except ValueError as exc:
-        return RedirectResponse(f"/settings/credentials?err={exc}", status_code=303)
+        return RedirectResponse(
+            f"/settings/credentials/new?err={exc}", status_code=303
+        )
 
 
 @router.post("/settings/credentials/{cred_id}/update")
@@ -164,9 +204,13 @@ def credentials_update(
         )
         return RedirectResponse("/settings/credentials?ok=updated", status_code=303)
     except CSRFError:
-        return RedirectResponse("/settings/credentials?err=csrf", status_code=303)
+        return RedirectResponse(
+            f"/settings/credentials/{cred_id}/edit?err=csrf", status_code=303
+        )
     except ValueError as exc:
-        return RedirectResponse(f"/settings/credentials?err={exc}", status_code=303)
+        return RedirectResponse(
+            f"/settings/credentials/{cred_id}/edit?err={exc}", status_code=303
+        )
 
 
 @router.post("/settings/credentials/{cred_id}/delete")

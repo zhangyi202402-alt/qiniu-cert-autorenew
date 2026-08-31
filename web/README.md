@@ -51,9 +51,16 @@ uvicorn app.main:app --reload --port 8000
 ## 用户流程
 
 1. 注册 / 登录  
-2. **凭证**：按云添加阿里云 / 腾讯云 / 七牛密钥（通用，可复用）  
+2. **凭证**：列表页按厂商查看；「添加凭证」新建，「编辑」改名/轮换密钥（分页面）  
 3. **配置档**：组合 DNS 插件 + 凭证 + 部署类型（七牛 CDN 或阿里 CLB）  
 4. **添加域名**：选配置档，填写签发域名与 CDN/CLB 目标 → `_qcert-verify` TXT 归属验证  
 5. 验证通过后自动签发 / 部署；cron 每日复检归属，丢失则停止续签  
 
 域名与部署目标在证书上（B1）；配置档不含具体域名。
+
+## 浏览器与 CDN
+
+控制台 UI 使用 Material Web（CDN `esm.run`）与 Google Fonts。需现代浏览器（支持 Web Components / import maps）。
+内网环境请将 `web/app/templates/base.html` 中 import map 与字体链接改为可达镜像。
+
+配置档页的凭证下拉为原生 `<select>`（便于动态填充兼容矩阵）；其余主控件为 Material Web。

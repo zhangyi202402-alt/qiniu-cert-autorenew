@@ -87,3 +87,59 @@ def test_base_loads_material_web_importmap(client: TestClient):
     assert 'type="importmap"' in r.text
     assert "@material/web/" in r.text
     assert "md-filled-button" in r.text or "/static/app.css" in r.text
+
+
+def test_credentials_new_page(client: TestClient):
+    _register(client)
+    r = client.get("/settings/credentials/new")
+    assert r.status_code == 200
+    assert "添加凭证" in r.text
+    assert 'name="provider"' in r.text or "provider" in r.text
+
+
+def test_credentials_edit_page(client: TestClient):
+    _register(client)
+    r = client.get("/settings/credentials")
+    token = _csrf(r.text)
+    r = client.post(
+        "/settings/credentials",
+        data={
+            "name": "ali",
+            "provider": "aliyun",
+            "access_key": "ak",
+            "secret_key": "sk",
+            "cas_certificate_region": "cn-hangzhou",
+            "csrf_token": token,
+        },
+    )
+    assert r.status_code == 303
+    r = client.get("/settings/credentials/1/edit")
+    assert r.status_code == 200
+    assert "编辑凭证" in r.text
+    assert "ali" in r.text
+
+
+def test_create_error_redirects_to_new(client: TestClient):
+    _register(client)
+    r = client.get("/settings/credentials/new")
+    token = _csrf(r.text)
+    r = client.post(
+        "/settings/credentials",
+        data={
+            "name": "x",
+            "provider": "invalid",
+            "access_key": "a",
+            "secret_key": "b",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/settings/credentials/new?")
+
+
+def test_credentials_list_uses_material_controls(client: TestClient):
+    _register(client)
+    r = client.get("/settings/credentials")
+    assert "md-filled-button" in r.text
+    assert "/settings/credentials/new" in r.text

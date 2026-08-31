@@ -1,38 +1,37 @@
 {% extends "base.html" %}
 {% block title %}编辑证书 — {{ cert.name }}{% endblock %}
 {% block content %}
-<div class="panel">
+<section class="section-card">
   <h1>编辑证书</h1>
-  <p class="hint">可改绑配置档、签发域名与部署目标。若主域名变更，归属验证将重置为 unverified。</p>
-  {% if error %}<div class="error">{{ error }}</div>{% endif %}
-  <form method="post" action="/certs/{{ cert.id }}/edit">
+  <p class="supporting">可改绑配置档、签发域名与部署目标。若主域名变更，归属验证将重置为 unverified。</p>
+  {% if error %}<div class="banner banner--err">{{ error }}</div>{% endif %}
+  <form method="post" action="/certs/{{ cert.id }}/edit" class="form-stack" style="max-width:640px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>名称</label>
-    <input name="name" required maxlength="128" value="{{ form.name }}">
-    <label>配置档</label>
-    <select name="profile_id" id="profile_id" required>
+    <md-outlined-text-field label="名称" name="name" required maxlength="128" value="{{ form.name }}"></md-outlined-text-field>
+    <label class="field-label" for="profile_id">配置档</label>
+    <select name="profile_id" id="profile_id" class="native-field" required>
       {% for p in profiles %}
       <option value="{{ p.id }}" data-type="{{ p.deploy_type }}" {% if form.profile_id|string == p.id|string %}selected{% endif %}>{{ p.name }} ({{ p.deploy_type }})</option>
       {% endfor %}
     </select>
-    <label>ACME 邮箱</label>
-    <input type="email" name="acme_email" required value="{{ form.acme_email }}">
-    <label>签发域名</label>
-    <textarea name="issue_domains" required>{{ form.issue_domains }}</textarea>
+    <md-outlined-text-field label="ACME 邮箱" type="email" name="acme_email" required value="{{ form.acme_email }}"></md-outlined-text-field>
+    <label class="field-label" for="issue_domains">签发域名</label>
+    <textarea class="native-field" name="issue_domains" id="issue_domains" required>{{ form.issue_domains }}</textarea>
     <div id="cdn-box">
-      <label>七牛 CDN 域名</label>
-      <textarea name="cdn_domains" id="cdn_domains">{{ form.cdn_domains }}</textarea>
+      <label class="field-label" for="cdn_domains">七牛 CDN 域名</label>
+      <textarea class="native-field" name="cdn_domains" id="cdn_domains">{{ form.cdn_domains }}</textarea>
     </div>
     <div id="clb-box" style="display:none;">
-      <label>阿里 CLB 目标</label>
-      <textarea name="clb_targets" id="clb_targets">{{ form.clb_targets }}</textarea>
+      <label class="field-label" for="clb_targets">阿里 CLB 目标</label>
+      <textarea class="native-field" name="clb_targets" id="clb_targets">{{ form.clb_targets }}</textarea>
     </div>
-    <label>续签提前天数</label>
-    <input type="number" name="renew_days" value="{{ form.renew_days }}" min="7" max="60">
-    <button type="submit">保存</button>
-    <a class="btn secondary" href="/certs" style="margin-left:0.5rem;">取消</a>
+    <md-outlined-text-field label="续签提前天数" type="number" name="renew_days" value="{{ form.renew_days }}" min="7" max="60"></md-outlined-text-field>
+    <div class="form-actions">
+      <md-filled-button type="submit">保存</md-filled-button>
+      <a href="/certs" style="text-decoration:none;"><md-outlined-button type="button">取消</md-outlined-button></a>
+    </div>
   </form>
-</div>
+</section>
 <script>
 (function(){
   var sel = document.getElementById('profile_id');
