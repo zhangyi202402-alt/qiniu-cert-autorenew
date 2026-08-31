@@ -1,0 +1,142 @@
+:root {
+  --md-sys-color-primary: #0f6b58;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #a5f2d7;
+  --md-sys-color-on-primary-container: #002117;
+  --md-sys-color-surface: #f7f9f8;
+  --md-sys-color-surface-container: #eceeec;
+  --md-sys-color-surface-container-high: #e6e9e7;
+  --md-sys-color-on-surface: #191c1b;
+  --md-sys-color-on-surface-variant: #3d4945;
+  --md-sys-color-outline: #6d7a75;
+  --md-sys-color-outline-variant: #bcc9c3;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-error-container: #ffdad6;
+  --app-max: 960px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: "Noto Sans SC", Roboto, system-ui, sans-serif;
+}
+
+a { color: var(--md-sys-color-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--md-sys-color-surface-container);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.app-bar__brand {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--md-sys-color-on-surface);
+  text-decoration: none;
+}
+
+.app-bar__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.wrap {
+  max-width: var(--app-max);
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.page-head h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
+}
+
+.supporting {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0.35rem 0 0;
+}
+
+.banner {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  margin: 0 0 1rem;
+}
+.banner--ok {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+.banner--err {
+  background: var(--md-sys-color-error-container);
+  color: #410002;
+}
+
+.section-card {
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  margin: 0 0 1rem;
+}
+
+.section-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  max-width: 480px;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.md-danger {
+  --md-text-button-label-text-color: var(--md-sys-color-error);
+}
+
+.auth-card {
+  max-width: 420px;
+  margin: 2rem auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
