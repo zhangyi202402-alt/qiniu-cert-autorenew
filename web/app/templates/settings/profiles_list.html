@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}配置档 — SSL 证书服务{% endblock %}
+{% block content %}
+{% if ok %}<div class="banner banner--ok">操作成功（{{ ok }}）</div>{% endif %}
+{% if error %}<div class="banner banner--err">{{ error }}</div>{% endif %}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<div class="page-head">
+  <div>
+    <h1>部署配置档</h1>
+    <p class="supporting">配方：DNS 插件 + 凭证 + 部署类型。建议目标仅用于建证预填。</p>
+  </div>
+  <a href="/settings/profiles/new" style="text-decoration:none;">
+    <md-filled-button type="button">
+      <md-icon slot="icon">add</md-icon>
+      添加配置档
+    </md-filled-button>
+  </a>
+</div>
+
+{% if profiles %}
+<section class="section-card">
+  <md-list>
+    {% for p in profiles %}
+    <md-list-item>
+      <div slot="headline">{{ p.name }}</div>
+      <div slot="supporting-text">
+        {% if p.dns_provider == 'dns_ali' %}阿里云 DNS{% else %}腾讯云 DNS{% endif %}
+        ·
+        {% if p.deploy_type == 'qiniu_cdn' %}七牛 CDN{% else %}阿里云 CLB{% endif %}
+      </div>
+      <div slot="end" style="display:flex;gap:0.35rem;align-items:center;">
+        <a href="/settings/profiles/{{ p.id }}/edit" style="text-decoration:none;">
+          <md-text-button type="button">编辑</md-text-button>
+        </a>
+        <form method="post" action="/settings/profiles/{{ p.id }}/delete" style="display:inline;margin:0;" onsubmit="return confirm('确认删除？');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <md-text-button class="md-danger" type="submit">删除</md-text-button>
+        </form>
+      </div>
+    </md-list-item>
+    {% endfor %}
+  </md-list>
+</section>
+{% else %}
+<p class="supporting">还没有配置档。请先在 <a href="/settings/credentials">凭证</a> 添加密钥，再点击「添加配置档」。</p>
+{% endif %}
+<p class="supporting">下一步：到 <a href="/certs/add">添加域名</a> 选配置档并签发。</p>
+{% endblock %}

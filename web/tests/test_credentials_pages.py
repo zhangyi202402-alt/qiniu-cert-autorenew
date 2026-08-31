@@ -143,3 +143,97 @@ def test_credentials_list_uses_material_controls(client: TestClient):
     r = client.get("/settings/credentials")
     assert "md-filled-button" in r.text
     assert "/settings/credentials/new" in r.text
+
+
+def test_profiles_list_new_edit_pages(client: TestClient):
+    _register(client)
+    r = client.get("/settings/credentials")
+    token = _csrf(r.text)
+    client.post(
+        "/settings/credentials",
+        data={
+            "name": "ali",
+            "provider": "aliyun",
+            "access_key": "ak",
+            "secret_key": "sk",
+            "cas_certificate_region": "cn-hangzhou",
+            "csrf_token": token,
+        },
+    )
+    r = client.get("/settings/credentials")
+    token = _csrf(r.text)
+    client.post(
+        "/settings/credentials",
+        data={
+            "name": "qn",
+            "provider": "qiniu",
+            "access_key": "qak",
+            "secret_key": "qsk",
+            "csrf_token": token,
+        },
+    )
+
+    r = client.get("/settings/profiles")
+    assert r.status_code == 200
+    assert "/settings/profiles/new" in r.text
+    assert "md-filled-button" in r.text
+
+    r = client.get("/settings/profiles/new")
+    assert r.status_code == 200
+    assert "添加配置档" in r.text
+    token = _csrf(r.text)
+    r = client.post(
+        "/settings/profiles",
+        data={
+            "name": "cdn",
+            "dns_provider": "dns_ali",
+            "dns_credential_id": "1",
+            "deploy_type": "qiniu_cdn",
+            "deploy_credential_id": "2",
+            "suggested_targets": "cdn.example.com",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/settings/profiles")
+
+    r = client.get("/settings/profiles/1/edit")
+    assert r.status_code == 200
+    assert "编辑配置档" in r.text
+    assert "cdn" in r.text
+
+
+def test_profile_create_error_redirects_to_new(client: TestClient):
+    _register(client)
+    r = client.get("/settings/profiles/new")
+    # 无凭证时页面可能无表单；先建凭证
+    r = client.get("/settings/credentials")
+    token = _csrf(r.text)
+    client.post(
+        "/settings/credentials",
+        data={
+            "name": "ali",
+            "provider": "aliyun",
+            "access_key": "ak",
+            "secret_key": "sk",
+            "cas_certificate_region": "cn-hangzhou",
+            "csrf_token": token,
+        },
+    )
+    r = client.get("/settings/profiles/new")
+    token = _csrf(r.text)
+    r = client.post(
+        "/settings/profiles",
+        data={
+            "name": "bad",
+            "dns_provider": "dns_ali",
+            "dns_credential_id": "1",
+            "deploy_type": "qiniu_cdn",
+            "deploy_credential_id": "1",  # aliyun 不能部署七牛
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/settings/profiles/new?")

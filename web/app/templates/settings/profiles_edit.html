@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}编辑配置档 — SSL 证书服务{% endblock %}
+{% block content %}
+<p class="supporting"><a href="/settings/profiles">← 返回列表</a></p>
+{% if error %}<div class="banner banner--err">{{ error }}</div>{% endif %}
+<section class="section-card">
+  <h1>编辑配置档</h1>
+  <form method="post" action="/settings/profiles/{{ profile.id }}/update" class="profile-form form-stack" style="max-width:640px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <md-outlined-text-field label="名称" name="name" value="{{ profile.name }}" required maxlength="128"></md-outlined-text-field>
+    <label class="field-label">DNS 插件</label>
+    <select name="dns_provider" class="dns-provider native-field">
+      <option value="dns_ali" {% if profile.dns_provider=='dns_ali' %}selected{% endif %}>阿里云 DNS</option>
+      <option value="dns_tencent" {% if profile.dns_provider=='dns_tencent' %}selected{% endif %}>腾讯云 DNS</option>
+    </select>
+    <label class="field-label">DNS 凭证</label>
+    <select name="dns_credential_id" class="dns-cred native-field" data-selected="{{ profile.dns_credential_id }}"></select>
+    <label class="field-label">部署类型</label>
+    <select name="deploy_type" class="deploy-type native-field">
+      <option value="qiniu_cdn" {% if profile.deploy_type=='qiniu_cdn' %}selected{% endif %}>七牛 CDN</option>
+      <option value="aliyun_clb" {% if profile.deploy_type=='aliyun_clb' %}selected{% endif %}>阿里云 CLB</option>
+    </select>
+    <label class="field-label">部署凭证</label>
+    <select name="deploy_credential_id" class="deploy-cred native-field" data-selected="{{ profile.deploy_credential_id }}"></select>
+    <label class="field-label">建议部署目标（建证预填，可空）</label>
+    <textarea class="native-field" name="suggested_targets" placeholder="CDN: 每行域名&#10;CLB: region,lb_id[,port][,probe]">{{ suggested_targets_text }}</textarea>
+    <div class="form-actions">
+      <a href="/settings/profiles" style="text-decoration:none;"><md-outlined-button type="button">取消</md-outlined-button></a>
+      <md-filled-button type="submit">保存更改</md-filled-button>
+    </div>
+  </form>
+</section>
+<script>
+(function(){
+  var creds = {{ credentials_json|safe }};
+  var dnsMap = {dns_ali:'aliyun', dns_tencent:'tencent'};
+  var depMap = {qiniu_cdn:'qiniu', aliyun_clb:'aliyun'};
+  function fill(sel, provider, selected){
+    if(!sel) return;
+    sel.innerHTML = '';
+    creds.filter(function(c){ return c.provider===provider; }).forEach(function(c){
+      var o = document.createElement('option');
+      o.value = c.id; o.textContent = '['+c.provider+'] '+c.name;
+      if(String(selected)===String(c.id)) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+  document.querySelectorAll('.profile-form').forEach(function(form){
+    var dnsP = form.querySelector('.dns-provider');
+    var depT = form.querySelector('.deploy-type');
+    var dnsC = form.querySelector('.dns-cred');
+    var depC = form.querySelector('.deploy-cred');
+    function sync(){
+      fill(dnsC, dnsMap[dnsP.value], dnsC.getAttribute('data-selected'));
+      fill(depC, depMap[depT.value], depC.getAttribute('data-selected'));
+    }
+    dnsP.addEventListener('change', function(){ dnsC.removeAttribute('data-selected'); sync(); });
+    depT.addEventListener('change', function(){ depC.removeAttribute('data-selected'); sync(); });
+    sync();
+  });
+})();
+</script>
+{% endblock %}

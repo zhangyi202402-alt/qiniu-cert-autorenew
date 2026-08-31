@@ -234,27 +234,93 @@ def credentials_delete(
 # ----- profiles -----
 
 
+def _credentials_json(creds) -> str:
+    return json.dumps(
+        [{"id": c.id, "name": c.name, "provider": c.provider} for c in creds]
+    )
+
+
+def _suggested_targets_textarea(deploy_type: str, suggested) -> str:
+    lines: list[str] = []
+    for t in suggested or []:
+        if deploy_type == "qiniu_cdn" and t.get("type") == "qiniu_cdn":
+            lines.extend(t.get("domains") or [])
+        elif deploy_type == "aliyun_clb" and t.get("type") == "aliyun_clb":
+            parts = [
+                t.get("region_id", ""),
+                t.get("load_balancer_id", ""),
+                str(t.get("listener_port") or 443),
+            ]
+            if t.get("probe_host"):
+                parts.append(t["probe_host"])
+            lines.append(",".join(parts))
+    return "\n".join(lines)
+
+
 @router.get("/settings/profiles", response_class=HTMLResponse)
-def profiles_page(
+def profiles_list_page(
     request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     profiles = credential_repo.list_profiles(db, user.id)
-    creds = credential_repo.list_credentials(db, user.id)
     return templates.TemplateResponse(
         request,
-        "settings/profiles.html",
+        "settings/profiles_list.html",
         _ctx(
             request,
             user=user,
             profiles=profiles,
-            credentials=creds,
-            credentials_json=json.dumps(
-                [{"id": c.id, "name": c.name, "provider": c.provider} for c in creds]
-            ),
             error=request.query_params.get("err"),
             ok=request.query_params.get("ok"),
+        ),
+    )
+
+
+@router.get("/settings/profiles/new", response_class=HTMLResponse)
+def profiles_new_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    creds = credential_repo.list_credentials(db, user.id)
+    return templates.TemplateResponse(
+        request,
+        "settings/profiles_new.html",
+        _ctx(
+            request,
+            user=user,
+            credentials=creds,
+            credentials_json=_credentials_json(creds),
+            error=request.query_params.get("err"),
+        ),
+    )
+
+
+@router.get("/settings/profiles/{profile_id}/edit", response_class=HTMLResponse)
+def profiles_edit_page(
+    request: Request,
+    profile_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    profile = credential_repo.get_profile(db, profile_id, user.id)
+    if not profile:
+        return RedirectResponse("/settings/profiles?err=配置档不存在", status_code=303)
+    creds = credential_repo.list_credentials(db, user.id)
+    return templates.TemplateResponse(
+        request,
+        "settings/profiles_edit.html",
+        _ctx(
+            request,
+            user=user,
+            profile=profile,
+            credentials=creds,
+            credentials_json=_credentials_json(creds),
+            suggested_targets_text=_suggested_targets_textarea(
+                profile.deploy_type, profile.suggested_targets_json
+            ),
+            error=request.query_params.get("err"),
         ),
     )
 
@@ -287,9 +353,9 @@ def profiles_create(
         )
         return RedirectResponse("/settings/profiles?ok=1", status_code=303)
     except CSRFError:
-        return RedirectResponse("/settings/profiles?err=csrf", status_code=303)
+        return RedirectResponse("/settings/profiles/new?err=csrf", status_code=303)
     except (ValueError, json.JSONDecodeError) as exc:
-        return RedirectResponse(f"/settings/profiles?err={exc}", status_code=303)
+        return RedirectResponse(f"/settings/profiles/new?err={exc}", status_code=303)
 
 
 @router.post("/settings/profiles/{profile_id}/update")
@@ -322,9 +388,13 @@ def profiles_update(
         )
         return RedirectResponse("/settings/profiles?ok=updated", status_code=303)
     except CSRFError:
-        return RedirectResponse("/settings/profiles?err=csrf", status_code=303)
+        return RedirectResponse(
+            f"/settings/profiles/{profile_id}/edit?err=csrf", status_code=303
+        )
     except (ValueError, json.JSONDecodeError) as exc:
-        return RedirectResponse(f"/settings/profiles?err={exc}", status_code=303)
+        return RedirectResponse(
+            f"/settings/profiles/{profile_id}/edit?err={exc}", status_code=303
+        )
 
 
 @router.post("/settings/profiles/{profile_id}/delete")
