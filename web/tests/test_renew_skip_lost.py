@@ -76,3 +76,36 @@ def test_renew_skips_when_ownership_lost(db, settings):
     assert cert.verification_status == "lost"
     assert cert.last_error and "ownership" in cert.last_error.lower()
     assert cert.status == "active"
+
+
+def test_renew_allows_cli_imported_without_txt(db, settings):
+    user = register_user(db, "cli@example.com", "password123")
+    profile = seed_ali_qiniu_profile(db, user.id, settings)
+    svc = CertService(db, settings)
+    cert = svc.create_certificate(
+        user.id,
+        CertCreateForm(
+            name="cli",
+            acme_email="ops@example.com",
+            profile_id=profile.id,
+            issue_domains=["example.com", "cdn.example.com"],
+            deploy_targets=[
+                {"type": "qiniu_cdn", "domains": ["cdn.example.com"], "https": {}}
+            ],
+        ),
+    )
+    cert.verification_status = "verified"
+    cert.verified_at = cert.created_at
+    cert.status = "active"
+    cert.enabled = True
+    cert.state_json = {"cli_imported": True}
+    db.commit()
+
+    with patch("app.ownership_service.query_txt", return_value=[]):
+        with patch.object(svc, "issue_certificate") as issue:
+            svc.renew_certificate(cert.id)
+
+    db.refresh(cert)
+    assert cert.verification_status == "verified"
+    assert cert.last_error is None
+    issue.assert_called_once_with(cert.id, job_type="renew")

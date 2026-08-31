@@ -277,10 +277,16 @@ class CertService:
         cert = cert_repo.get(self.db, cert_id)
         if not cert:
             return
-        if not result.ok or cert.verification_status != "verified":
+        cli_imported = bool((cert.state_json or {}).get("cli_imported"))
+        ownership_ok = result.ok or (
+            cli_imported and cert.verification_status == "verified"
+        )
+        if not ownership_ok or cert.verification_status != "verified":
             cert.last_error = "ownership verification lost; renew skipped"
             cert_repo.save(self.db, cert)
             return
+        cert.last_error = None
+        cert_repo.save(self.db, cert)
         self.issue_certificate(cert_id, job_type="renew")
 
     def retry(self, cert_id: int, user_id: int) -> Certificate:

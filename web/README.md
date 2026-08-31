@@ -1,42 +1,53 @@
-# SSL 证书 Web 控制台
+# SSL 证书 Web 控制台（v3）
 
-基于 `qiniu_cert` 的轻量 Web：注册 / 登录、按用户配置云凭据、添加域名、DNS TXT 归属验证、自动签发并部署七牛 CDN、归属有效才续签。
+基于 `qiniu_cert` 的 Web 控制台：**v3.0.0 起与 v2 CLI 不兼容**。版本说明见 [docs/VERSIONING.md](../docs/VERSIONING.md)，迁移见 [docs/MIGRATION-v3.md](../docs/MIGRATION-v3.md)。
 
-## 与现有 CLI / Docker 签发的关系（重要）
+## 与 v2 CLI 的关系
 
-| | 现有七牛/阿里 CLI | Web 控制台 |
-|--|-------------------|------------|
-| 代码 | `qiniu_cert/`、`scripts/`、根 `docker-compose.yml` | 仅 `web/` |
-| 配置 | 根目录 `config.yaml` + `.env` | `web/.env` + MySQL |
-| 证书目录 | `.local/acme/` | `.local/web/{user_id}/{cert_id}/acme/` |
-| 定时 | `cron-acme.sh` / scheduler 容器 | `web` 内 supercronic |
+| | v2 CLI（`v2.0.0`，无 UI） | v3 Web（本目录） |
+|--|---------------------------|------------------|
+| 代码 | `qiniu_cert/`、`scripts/`、根 `docker-compose.yml` | `web/` + 复用 `qiniu_cert` |
+| 配置 | `config.yaml` + `.env` | MySQL + `web/.env` |
+| 证书 | `.local/acme/`（共享） | `.local/web/{user_id}/{cert_id}/acme/` |
+| 定时 | `scheduler` / 宿主机 cron | 本容器 supercronic |
+| 并行 | — | **不可**对同一域名双跑 |
 
-Web **只读复用** `qiniu_cert` 与 `scripts/qiniu_wrapper.sh`，**不改写** CLI 逻辑。你现在的卡拉丁/七牛、阿里云 DNS、CLB 签发续签继续用原来的：
-
-```bash
-# 与以前完全相同
-docker compose up -d scheduler
-# 或
-bash -c 'source scripts/bootstrap.sh && bash scripts/acme-issue-all.sh'
-```
-
-不要把 Web 的 MySQL / `.local/web` 当成 CLI 的配置源。
+Web **只读复用** `qiniu_cert` 与 `scripts/*_wrapper.sh` 做 deploy hook，**运行时不再读取**根目录 `config.yaml`。
 
 ## 快速开始（Docker）
 
 ```bash
 cd web
 cp .env.example .env   # 填写 SECRET_KEY / WEB_MASTER_KEY
-# 基础镜像走 docker.1ms.run（本机已有 python:3.12-slim-bookworm 缓存）
 docker compose -f docker-compose.web.yml up -d --build
 ```
 
 浏览器打开 http://127.0.0.1:8000
 
+## 从 v2 CLI 迁移
+
+1. **导入配置**（凭证、配置档、证书记录）：
+
+```bash
+cd web
+PYTHONPATH=..:. \
+  PROJECT_ROOT="$(pwd)/.." WEB_DATA_ROOT="$(pwd)/../.local/web" \
+  ../.venv/bin/python scripts/import_cli_config.py --email 你的登录邮箱
+```
+
+2. **迁入已签发证书**（免重新签发）：
+
+```bash
+../.venv/bin/python scripts/import_cli_certs.py --email 你的登录邮箱 --include-disabled
+```
+
+3. **停掉 v2**：`docker compose stop scheduler`（项目根目录），并删除宿主机 acme crontab。
+
+4. Docker 卷同步与权限见 [docs/MIGRATION-v3.md](../docs/MIGRATION-v3.md)。
+
 ## 本地开发
 
 ```bash
-# 需要 MySQL 5.7+，库名 qiniu_cert_web
 cd web
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r ../requirements.txt
@@ -52,32 +63,18 @@ uvicorn app.main:app --reload --port 8000
 
 1. 注册 / 登录  
 2. **凭证**：列表 → 添加 / 编辑  
-3. **配置档**：列表 → 添加 / 编辑（组合 DNS + 部署类型 + 凭证）  
-4. **添加域名**：选配置档，填写签发域名与 CDN/CLB 目标 → `_qcert-verify` TXT 归属验证  
-5. 验证通过后自动签发 / 部署；cron 每日复检归属，丢失则停止续签  
-
-域名与部署目标在证书上（B1）；配置档不含具体域名。
+3. **配置档**：列表 → 添加 / 编辑（DNS + 部署类型 + 凭证）  
+4. **添加域名**：选配置档 → `_qcert-verify` TXT 归属验证  
+5. 验证通过后签发 / 部署；cron 每日复检归属（CLI 迁入证书见 `cli_imported` 豁免）
 
 ## 浏览器与 CDN
 
-控制台 UI 使用 Material Web（CDN `esm.run`）与 Google Fonts。需现代浏览器（支持 Web Components / import maps）。
-内网环境请将 `web/app/templates/base.html` 中 import map 与字体链接改为可达镜像。
+控制台 UI 使用 Material Web（CDN `esm.run`）与 Google Fonts。内网请改 `web/app/templates/base.html` 中的 import map 与字体链接。
 
-配置档页的凭证下拉为原生 `<select>`（便于动态填充兼容矩阵）；其余主控件为 Material Web。
+## 脚本
 
-## 从 CLI config 导入（可选）
-
-把仓库根 `config.yaml` + `.env` 里的密钥导入当前 Web 用户（幂等，同名跳过）：
-
-```bash
-cd web
-PYTHONPATH=..:. \
-  PROJECT_ROOT="$(pwd)/.." WEB_DATA_ROOT="$(pwd)/../.local/web" \
-  ../.venv/bin/python scripts/import_cli_config.py --email 你的登录邮箱
-
-# 预览不写库
-../.venv/bin/python scripts/import_cli_config.py --email 你的登录邮箱 --dry-run
-```
-
-宿主机访问 Docker MySQL 时脚本会自动把 `mysql:3306` 改成 `127.0.0.1:3307`。  
-导入后证书仍是 `unverified`，需按验证页补 TXT 后再签发。
+| 脚本 | 用途 |
+|------|------|
+| `scripts/import_cli_config.py` | v2 `config.yaml` → Web DB |
+| `scripts/import_cli_certs.py` | v2 `.local/acme` 已签证书 → Web 目录 + DB |
+| `scripts/cron-renew.sh` | 手动触发续签扫描 |

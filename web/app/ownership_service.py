@@ -71,10 +71,14 @@ class OwnershipService:
         result = self.check(cert.verification_host, cert.verification_token)
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         cert.last_verification_at = now
+        cli_imported = bool((cert.state_json or {}).get("cli_imported"))
         if result.ok:
             cert.verification_status = "verified"
             if not cert.verified_at:
                 cert.verified_at = now
+        elif cli_imported:
+            # CLI 迁入证书尚未配置 Web TXT；保持 verified，避免阻断续签
+            pass
         else:
             if cert.verification_status == "verified" or cert.verified_at:
                 cert.verification_status = "lost"

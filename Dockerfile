@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM docker.1ms.run/python:3.12-slim-bookworm
 
 ARG SUPERCRONIC_VERSION=v0.2.33
 ARG TARGETARCH
@@ -29,7 +29,7 @@ RUN apt-get update \
         amd64) SUPERCRONIC_ARCH=amd64 ;; \
         *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
        esac \
-    && curl -fsSL "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${SUPERCRONIC_ARCH}" \
+    && curl -fsSL "https://ghfast.top/https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${SUPERCRONIC_ARCH}" \
         -o /usr/local/bin/supercronic \
     && chmod +x /usr/local/bin/supercronic \
     && rm -rf /var/lib/apt/lists/*
@@ -55,6 +55,6 @@ ENV HTTP_PROXY= \
     QINIU_CERT_ROOT=/app \
     QINIU_CERT_CONFIG=/app/config.yaml \
     QINIU_CERT_PYTHON=python3 \
-    ACME_GIT_REPO=https://github.com/acmesh-official/acme.sh.git
+    ACME_GIT_REPO=https://ghfast.top/https://github.com/acmesh-official/acme.sh.git
 
 ENTRYPOINT ["/app/scripts/entrypoint.sh"]

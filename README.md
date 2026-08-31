@@ -6,6 +6,8 @@ Automated Let's Encrypt certificate renewal and deployment for **Qiniu CDN** and
 
 **Maintained by [卡拉丁 Kalading](https://www.kalading.com)**（北京卡拉丁汽车技术服务有限公司）· Author: **zhangyi**
 
+> **Version 3.0.0** — Web 控制台为主线；**v2 CLI-only 最终版为 [v2.0.0](docs/VERSIONING.md)**。两套运行方式**不兼容**，请勿对同一批证书双跑 cron。迁移见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)。
+
 > **Disclaimer:** Open-source tool maintained by 北京卡拉丁汽车技术服务有限公司, not affiliated with or endorsed by Qiniu or Alibaba Cloud. "Qiniu" and "Alibaba Cloud" are trademarks of their respective owners. Use of their APIs is subject to their terms of service.
 
 ## 架构
@@ -68,7 +70,28 @@ Docker 与裸机共用 **一份 `config.yaml`**，运行时数据均在项目 `.
 - 旧 certID 延迟清理（7 天）
 - 钉钉 / 飞书 webhook 告警
 
-## 快速开始（Docker）
+## Web 控制台（v3 推荐）
+
+多用户注册 / 登录、加密凭据、域名 TXT 归属验证、自动签发部署：**见 [`web/README.md`](web/README.md)**。
+
+```bash
+cd web && cp .env.example .env && docker compose -f docker-compose.web.yml up -d --build
+```
+
+| | v2 CLI（tag `v2.0.0`） | v3 Web |
+|--|------------------------|--------|
+| 配置 | `config.yaml` + `.env` | MySQL + `web/.env` |
+| 证书目录 | `.local/acme/` | `.local/web/{user_id}/{cert_id}/` |
+| 定时 | `scheduler` / 宿主机 cron | `web` 内 supercronic |
+| 与另一套并行 | — | **禁止**（同一域名会重复续签） |
+
+从 v2 迁到 v3：`import_cli_config.py` + `import_cli_certs.py`，然后停掉 v2 scheduler。详见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)。
+
+---
+
+## 快速开始（v2 CLI / Docker）
+
+> 若已使用 **Web v3**，请跳过本节，勿再启动 `scheduler`。
 
 ```bash
 cp .env.example .env
