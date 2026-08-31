@@ -13,9 +13,6 @@
 <div class="warn">尚未创建配置档。请先配置 <a href="/settings/credentials">凭证</a> 与 <a href="/settings/profiles">配置档</a>，否则验证通过后无法签发。</div>
 {% endif %}
 <section class="section-card">
-  {% if not certs %}
-  <p class="supporting">还没有证书。点击「添加域名」开始。</p>
-  {% else %}
   <div class="table-scroll">
   <table class="data">
     <thead>
@@ -30,6 +27,11 @@
       </tr>
     </thead>
     <tbody>
+      {% if not certs %}
+      <tr>
+        <td colspan="7"><p class="supporting" style="margin:0.5rem 0;">还没有证书。点击「添加域名」开始。</p></td>
+      </tr>
+      {% else %}
       {% for c in certs %}
       {% set job = latest_jobs.get(c.id) %}
       <tr>
@@ -74,7 +76,8 @@
           {% else %}
             <span class="supporting">尚未签发</span>
           {% endif %}
-        </td>        <td>
+        </td>
+        <td>
           {% if job and job.finished_at %}
             <div>{{ job.finished_at.strftime('%Y-%m-%d %H:%M') }}</div>
             <div class="supporting">
@@ -136,9 +139,11 @@
         </td>
       </tr>
       {% endfor %}
+      {% endif %}
     </tbody>
   </table>
   </div>
+  {% if certs %}
   <script>
     (function(){
       const busy = {{ certs | selectattr('status', 'in', ['issuing','renewing']) | map(attribute='id') | list | tojson }};
