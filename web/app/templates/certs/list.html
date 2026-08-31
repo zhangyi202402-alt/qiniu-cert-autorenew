@@ -1,141 +1,156 @@
 {% extends "base.html" %}
 {% block title %}我的证书 — SSL 证书服务{% endblock %}
+{% block head %}
+<style>
+  .cert-list-page { --app-max: 1180px; max-width: var(--app-max); margin: 0 auto; }
+</style>
+{% endblock %}
 {% block content %}
+<div class="cert-list-page">
 <div class="page-head">
   <h1>我的证书</h1>
   <a href="/certs/add" style="text-decoration:none;">
     <md-filled-button type="button">添加域名</md-filled-button>
   </a>
 </div>
-{% if ok %}<div class="banner banner--ok">{{ ok }}</div>{% endif %}
+{% if ok %}<div class="banner banner--ok">{% if ok == 'deploy_started' %}已开始同步部署，状态将更新为「部署中」…{% elif ok == 'renew_started' %}已开始续签：当前在续签窗口内，完成后应换新证{% elif ok == 'renew_early' %}已开始续签检查：当前未到续签窗口，预计不会换证（见各行提示）{% elif ok == 'retry_started' %}已重新触发签发…{% elif ok == 'job_done' %}任务已完成，列表已刷新{% elif ok == 'toggled' %}已更新启用状态{% elif ok == 'updated' %}证书已保存{% else %}{{ ok }}{% endif %}</div>{% endif %}
 {% if err %}<div class="banner banner--err">{{ err }}</div>{% endif %}
 {% if not has_profiles %}
 <div class="warn">尚未创建配置档。请先配置 <a href="/settings/credentials">凭证</a> 与 <a href="/settings/profiles">配置档</a>，否则验证通过后无法签发。</div>
 {% endif %}
 <section class="section-card">
   <div class="table-scroll">
-  <table class="data">
+  <table class="data cert-table">
     <thead>
       <tr>
-        <th>名称 / 主域名</th>
-        <th>状态</th>
-        <th>归属</th>
-        <th>有效期</th>
-        <th>最近更新</th>
-        <th>更新结果</th>
-        <th>操作</th>
+        <th class="col-cert">证书</th>
+        <th class="col-status">状态</th>
+        <th class="col-expiry">有效期</th>
+        <th class="col-job">最近任务</th>
+        <th class="col-actions">操作</th>
       </tr>
     </thead>
     <tbody>
       {% if not certs %}
       <tr>
-        <td colspan="7"><p class="supporting" style="margin:0.5rem 0;">还没有证书。点击「添加域名」开始。</p></td>
+        <td colspan="5"><p class="supporting" style="margin:0.5rem 0;">还没有证书。点击「添加域名」开始。</p></td>
       </tr>
       {% else %}
       {% for c in certs %}
       {% set job = latest_jobs.get(c.id) %}
+      {% set hint = (renew_hints|default({})).get(c.id) %}
+      {% set days = deployed_days_left.get(c.id) if expiry_labels.get(c.id) == '线上' else days_left.get(c.id) %}
       <tr>
-        <td>
-          <div><strong>{{ c.name }}</strong></div>
-          <code>{{ c.primary_domain }}</code>
-          {% if not c.enabled %}<div class="supporting">已禁用</div>{% endif %}
+        <td class="cell-cert">
+          <div class="cert-name">{{ c.name }}</div>
+          <code class="cert-domain">{{ c.primary_domain }}</code>
         </td>
-        <td>
-          <span class="badge {{ c.status }}">
-            {% if c.status == 'active' %}正常
-            {% elif c.status == 'failed' %}失败
-            {% elif c.status == 'pending_verification' %}待验证
-            {% elif c.status == 'issuing' %}签发中
-            {% elif c.status == 'renewing' %}续签中
-            {% elif c.status == 'disabled' %}已禁用
-            {% else %}{{ c.status }}{% endif %}
-          </span>
+        <td class="cell-status">
+          <div class="status-badges">
+            <span class="badge {% if not c.enabled %}disabled{% else %}{{ c.status }}{% endif %}">
+              {% if not c.enabled %}已禁用
+              {% elif c.status == 'active' %}正常
+              {% elif c.status == 'failed' %}失败
+              {% elif c.status == 'pending_verification' %}待验证
+              {% elif c.status == 'issuing' %}签发中
+              {% elif c.status == 'renewing' %}续签中
+              {% elif c.status == 'deploying' %}部署中
+              {% elif c.status == 'disabled' %}已禁用
+              {% else %}{{ c.status }}{% endif %}
+            </span>
+            <span class="badge {{ c.verification_status }}">
+              {% if c.verification_status == 'verified' %}已验证
+              {% elif c.verification_status == 'unverified' %}未验证
+              {% elif c.verification_status == 'lost' %}已失效
+              {% else %}{{ c.verification_status }}{% endif %}
+            </span>
+          </div>
+          {% if c.verification_status == 'lost' %}
+            <div class="cell-hint cell-hint--warn">归属失效，已停续签</div>
+          {% endif %}
         </td>
-        <td>
-          <span class="badge {{ c.verification_status }}">
-            {% if c.verification_status == 'verified' %}已验证
-            {% elif c.verification_status == 'unverified' %}未验证
-            {% elif c.verification_status == 'lost' %}已失效
-            {% elif c.verification_status == 'pending_verification' %}验证中
-            {% else %}{{ c.verification_status }}{% endif %}
-          </span>
-        </td>
-        <td>
-          {% if c.expires_at %}
-            <div>{{ c.expires_at.strftime('%Y-%m-%d %H:%M') }}</div>
-            {% set days = days_left.get(c.id) %}
+        <td class="cell-expiry">
+          {% if expiry_display.get(c.id) %}
+            <div class="expiry-line">
+              <span class="expiry-date">{{ expiry_display.get(c.id) }}</span>
+              <span class="badge expiry-tag">{{ expiry_labels.get(c.id) }}</span>
+            </div>
             {% if days is not none %}
-              {% if days < 0 %}
-                <div class="supporting" style="color:var(--md-sys-color-error);">已过期 {{ -days }} 天</div>
-              {% elif days <= 30 %}
-                <div class="supporting" style="color:#7a4a00;">剩余 {{ days }} 天</div>
-              {% else %}
-                <div class="supporting">剩余 {{ days }} 天</div>
-              {% endif %}
+              <div class="expiry-days {% if days < 0 %}expiry-days--danger{% elif days <= 30 %}expiry-days--warn{% endif %}">
+                {% if days < 0 %}已过期 {{ -days }} 天{% else %}剩余 {{ days }} 天{% endif %}
+              </div>
+            {% endif %}
+            {% if expiry_mismatch.get(c.id) and local_expiry_display.get(c.id) %}
+              <div class="cell-hint cell-hint--warn" title="本地 {{ local_expiry_display.get(c.id) }}">与 CDN 不一致，请点「部署」</div>
+            {% endif %}
+            {% if hint %}
+              <div class="cell-hint cell-hint--{{ hint.level }}" title="按本地证书到期日与续签提前 {{ hint.renew_days }} 天计算">{{ hint.message }}</div>
             {% endif %}
           {% else %}
             <span class="supporting">尚未签发</span>
           {% endif %}
         </td>
-        <td>
+        <td class="cell-job">
           {% if job and job.finished_at %}
-            <div>{{ job.finished_at.strftime('%Y-%m-%d %H:%M') }}</div>
-            <div class="supporting">
-              {% if job.job_type == 'issue' %}签发
-              {% elif job.job_type == 'renew' %}续签
-              {% elif job.job_type == 'retry' %}重试
-              {% else %}{{ job.job_type }}{% endif %}
+            <div class="job-time">{{ job.finished_at.strftime('%Y-%m-%d %H:%M') }}</div>
+            <div class="job-meta">
+              {% if job.status == 'success' %}<span class="badge verified">成功</span>
+              {% elif job.status == 'failed' %}<span class="badge failed">失败</span>
+              {% elif job.status == 'running' %}<span class="badge issuing">进行中</span>
+              {% else %}<span class="badge">{{ job.status }}</span>{% endif %}
+              <span class="job-type">
+                {% if job.job_type == 'issue' %}签发
+                {% elif job.job_type == 'renew' %}续签
+                {% elif job.job_type == 'deploy' %}部署
+                {% elif job.job_type == 'retry' %}重试
+                {% elif job.job_type == 'import' %}导入
+                {% else %}{{ job.job_type }}{% endif %}
+              </span>
             </div>
-          {% elif job and job.started_at %}
-            <div>{{ job.started_at.strftime('%Y-%m-%d %H:%M') }}</div>
-            <div class="supporting">进行中…</div>
-          {% elif c.updated_at %}
-            <div>{{ c.updated_at.strftime('%Y-%m-%d %H:%M') }}</div>
-            <div class="supporting">记录更新</div>
-          {% else %}
-            —
-          {% endif %}
-        </td>
-        <td class="cell-result">
-          {% if job %}
-            {% if job.status == 'success' %}
-              <span class="badge verified">成功</span>
-            {% elif job.status == 'failed' %}
-              <span class="badge failed">失败</span>
-            {% elif job.status == 'running' %}
-              <span class="badge issuing">运行中</span>
-            {% else %}
-              <span class="badge">{{ job.status }}</span>
+            {% if (job_no_renewal|default({})).get(c.id) %}
+              <div class="cell-hint cell-hint--wait">上次续签：未到窗口，日期未变</div>
+            {% elif c.last_error %}
+              <div class="error-detail" title="{{ c.last_error }}">{{ c.last_error }}</div>
             {% endif %}
-          {% elif c.status == 'failed' or c.last_error %}
-            <span class="badge failed">有错误</span>
-          {% elif c.status == 'active' %}
-            <span class="badge verified">正常</span>
+          {% elif job and job.started_at %}
+            <div class="job-time">{{ job.started_at.strftime('%Y-%m-%d %H:%M') }}</div>
+            <div class="job-meta"><span class="badge issuing">进行中</span></div>
           {% else %}
             <span class="supporting">—</span>
           {% endif %}
-          {% if c.last_error %}
-            <div class="error-detail" title="{{ c.last_error }}">{{ c.last_error }}</div>
-          {% elif job and job.status == 'success' %}
-            <div class="supporting">无错误</div>
-          {% endif %}
-          {% if c.verification_status == 'lost' %}
-            <div class="warn" style="margin-top:0.35rem;">归属已失效，已停续签</div>
-          {% endif %}
         </td>
         <td class="cell-actions">
-          <a href="/certs/{{ c.id }}/verify" style="text-decoration:none;"><md-text-button type="button">验证</md-text-button></a>
-          <a href="/certs/{{ c.id }}/edit" style="text-decoration:none;"><md-text-button type="button">编辑</md-text-button></a>
-          {% if c.status == 'failed' and c.verification_status == 'verified' %}
-          <form method="post" action="/certs/{{ c.id }}/retry" style="display:inline;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <md-filled-tonal-button type="submit">重试</md-filled-tonal-button>
-          </form>
-          {% endif %}
-          <form method="post" action="/certs/{{ c.id }}/toggle" style="display:inline;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <md-outlined-button type="submit">{% if c.enabled %}禁用{% else %}启用{% endif %}</md-outlined-button>
-          </form>
+          <div class="cert-actions">
+            {% if c.enabled and c.verification_status == 'verified' and c.status in ('active', 'failed') %}
+            <div class="cert-actions__primary">
+              <form method="post" action="/certs/{{ c.id }}/deploy" class="cert-action-form" data-busy-label="部署中…">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn--outline">部署</button>
+              </form>
+              <form method="post" action="/certs/{{ c.id }}/renew" class="cert-action-form" data-busy-label="续签中…"{% if hint %} title="{{ hint.message }}"{% endif %}>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn--tonal{% if hint and not hint.in_window %} btn--muted{% endif %}">续签{% if hint and hint.in_window %}<span class="btn-tag">可换证</span>{% endif %}</button>
+              </form>
+            </div>
+            {% endif %}
+            <div class="cert-actions__links">
+              <a href="/certs/{{ c.id }}/verify">验证</a>
+              <span class="sep">·</span>
+              <a href="/certs/{{ c.id }}/edit">编辑</a>
+              {% if c.status == 'failed' and c.verification_status == 'verified' %}
+              <span class="sep">·</span>
+              <form method="post" action="/certs/{{ c.id }}/retry" class="cert-action-form cert-action-form--inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="link-btn">重试</button>
+              </form>
+              {% endif %}
+              <span class="sep">·</span>
+              <form method="post" action="/certs/{{ c.id }}/toggle" class="cert-action-form cert-action-form--inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="link-btn">{% if c.enabled %}禁用{% else %}启用{% endif %}</button>
+              </form>
+            </div>
+          </div>
         </td>
       </tr>
       {% endfor %}
@@ -146,19 +161,33 @@
   {% if certs %}
   <script>
     (function(){
-      const busy = {{ certs | selectattr('status', 'in', ['issuing','renewing']) | map(attribute='id') | list | tojson }};
+      document.querySelectorAll('.cert-action-form').forEach(function(form){
+        form.addEventListener('submit', function(){
+          var btn = form.querySelector('button[type="submit"]');
+          if (!btn || btn.disabled) return;
+          btn.disabled = true;
+          var label = form.getAttribute('data-busy-label');
+          if (label) btn.textContent = label;
+        });
+      });
+
+      const busy = {{ certs | selectattr('status', 'in', ['issuing','renewing','deploying']) | map(attribute='id') | list | tojson }};
       if (!busy.length) return;
-      setInterval(async () => {
+      setInterval(async function(){
         for (const id of busy) {
           try {
             const r = await fetch('/api/certs/' + id + '/status');
             const j = await r.json();
-            if (j.status !== 'issuing' && j.status !== 'renewing') location.reload();
+            if (j.status !== 'issuing' && j.status !== 'renewing' && j.status !== 'deploying') {
+              location.href = '/certs?ok=job_done';
+              return;
+            }
           } catch (e) {}
         }
-      }, 5000);
+      }, 3000);
     })();
   </script>
   {% endif %}
 </section>
+</div>
 {% endblock %}

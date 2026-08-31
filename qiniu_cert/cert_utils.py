@@ -168,6 +168,36 @@ def cert_covers_domain(fullchain_pem: str, domain: str) -> bool:
     return False
 
 
+def tls_not_after(
+    domain: str,
+    timeout: float = 10.0,
+    server_hostname: str | None = None,
+    connect_host: str | None = None,
+) -> datetime | None:
+    """
+    读取线上 443 证书 notAfter（naive UTC），失败返回 None。
+
+    connect_host: TCP 连接地址（如 CLB VIP）；默认等于 domain。
+    server_hostname: TLS SNI；默认等于 domain。
+    """
+    host = connect_host or domain
+    sni = server_hostname or domain
+    context = ssl.create_default_context()
+    try:
+        with socket.create_connection((host, 443), timeout=timeout) as sock:
+            with context.wrap_socket(sock, server_hostname=sni) as ssock:
+                der = ssock.getpeercert(binary_form=True)
+                if not der:
+                    return None
+                cert = x509.load_der_x509_certificate(der, default_backend())
+                not_after = getattr(cert, "not_valid_after_utc", cert.not_valid_after)
+                if not_after.tzinfo is None:
+                    not_after = not_after.replace(tzinfo=timezone.utc)
+                return not_after.replace(tzinfo=None)
+    except Exception:
+        return None
+
+
 def tls_probe(
     domain: str,
     min_valid_days: int = 30,

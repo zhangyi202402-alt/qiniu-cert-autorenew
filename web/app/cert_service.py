@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,14 +14,28 @@ from app.compat import validate_deploy_targets
 from app.config_builder import ConfigBuilder, CredentialsNotConfigured, cert_ready_for_issue
 from app.crypto import sanitize_error
 from app.file_lock import LockBusy, file_lock
-from app.models import Certificate
+from app.models import Certificate, CertJob
 from app.ownership_service import OwnershipService
 from app.repositories import cert_repo, credential_repo, user_repo
 from app.schemas import CertCreateForm, CertUpdateForm, primary_domain_of
 from app.settings import Settings, get_settings
-from qiniu_cert.acme_plan import sync_renew_days
+from qiniu_cert.acme_plan import acme_cert_dir, sync_renew_days
+from qiniu_cert.cert_utils import DeployError
+from qiniu_cert.config import load_config
+from qiniu_cert.deploy import DeployService
 
 logger = logging.getLogger(__name__)
+
+_BUSY_STATUSES = ("issuing", "renewing", "deploying")
+
+
+def _merge_deploy_state(cert: Certificate, deploy_state: dict | None) -> dict | None:
+    """合并 deploy state.json 内容，保留 cli_imported 等 Web 元数据。"""
+    if not deploy_state:
+        return cert.state_json
+    merged = dict(cert.state_json or {})
+    merged["deploy"] = deploy_state
+    return merged
 
 
 class OwnershipError(Exception):
@@ -54,6 +69,13 @@ def _secret_list_from_env(env: dict[str, str]) -> list[str]:
         ):
             secrets.append(val)
     return secrets
+
+
+def _pem_paths(cert: Certificate, acme_home: Path) -> tuple[Path, Path]:
+    cert_dir = acme_home / acme_cert_dir(cert.primary_domain, cert.key_type)
+    key = cert_dir / f"{cert.primary_domain}.key"
+    chain = cert_dir / "fullchain.cer"
+    return key, chain
 
 
 class CertService:
@@ -119,7 +141,7 @@ class CertService:
         cert = cert_repo.get_for_user(self.db, cert_id, user_id)
         if not cert:
             raise ValueError("certificate not found")
-        if cert.status in ("issuing", "renewing"):
+        if cert.status in _BUSY_STATUSES:
             raise ValueError("job already running")
 
         profile = credential_repo.get_profile(self.db, form.profile_id, user_id)
@@ -184,7 +206,7 @@ class CertService:
         cert = cert_repo.get(self.db, cert_id)
         if not cert:
             return
-        if cert.status in ("issuing", "renewing", "pending_verification"):
+        if cert.status in (*_BUSY_STATUSES, "pending_verification"):
             cert.status = "failed"
             cert.last_error = message[:2000]
             cert_repo.save(self.db, cert)
@@ -198,18 +220,29 @@ class CertService:
             raise OwnershipError("domain ownership not verified")
         if not cert_ready_for_issue(cert, profile):
             raise CredentialsError("certificate profile or deploy targets incomplete")
-        if cert.status in ("issuing", "renewing"):
+
+        expected_status = "issuing" if job_type in ("issue", "retry") else "renewing"
+        job: CertJob | None = None
+        if cert.status == expected_status:
+            latest = cert_repo.latest_job(self.db, cert_id)
+            if latest and latest.job_type == job_type and latest.status == "running":
+                job = latest
+            else:
+                self.db.rollback()
+                return
+        elif cert.status in _BUSY_STATUSES:
             self.db.rollback()
             return
+        else:
+            cert.status = expected_status
+            job = cert_repo.create_job(
+                self.db, cert_id, job_type, "running", commit=False
+            )
+            cert_repo.commit(self.db)
+            self.db.refresh(cert)
+            self.db.refresh(job)
 
         old_expires = cert.expires_at
-        cert.status = "issuing" if job_type in ("issue", "retry") else "renewing"
-        job = cert_repo.create_job(
-            self.db, cert_id, job_type, "running", commit=False
-        )
-        cert_repo.commit(self.db)
-        self.db.refresh(cert)
-        self.db.refresh(job)
 
         result_stdout = ""
         result_stderr = ""
@@ -245,14 +278,14 @@ class CertService:
             if job_type == "renew" and old_expires and expires and expires <= old_expires:
                 cert.status = "active"
                 cert.expires_at = expires or old_expires
-                cert.state_json = state or cert.state_json
+                cert.state_json = _merge_deploy_state(cert, state) or cert.state_json
                 cert.last_error = None
                 job.status = "success"
                 job.log_tail = "acme cron ok (no renewal needed)"
             else:
                 cert.status = "active"
                 cert.expires_at = expires
-                cert.state_json = state
+                cert.state_json = _merge_deploy_state(cert, state)
                 cert.last_error = None
                 job.status = "success"
         except Exception as exc:  # noqa: BLE001
@@ -289,6 +322,161 @@ class CertService:
         cert_repo.save(self.db, cert)
         self.issue_certificate(cert_id, job_type="renew")
 
+    def deploy_certificate(self, cert_id: int) -> None:
+        try:
+            cert = cert_repo.get(self.db, cert_id)
+            if not cert:
+                logger.error("certificate %s not found", cert_id)
+                return
+            if not cert.acme_home or cert.acme_home == "pending":
+                self._fail_cert(cert_id, "acme_home not ready", job_type="deploy")
+                return
+            lock_path = Path(cert.acme_home) / ".lock"
+            try:
+                with file_lock(lock_path, blocking=False):
+                    self._deploy_locked(cert_id)
+            except LockBusy:
+                logger.warning("cert %s lock busy, skip deploy", cert_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("deploy_certificate outer failure cert_id=%s", cert_id)
+            self._fail_cert(cert_id, sanitize_error(str(exc)), job_type="deploy")
+
+    def _deploy_locked(self, cert_id: int) -> None:
+        cert = cert_repo.get_for_update(self.db, cert_id)
+        if not cert:
+            return
+        profile = credential_repo.get_profile(self.db, cert.profile_id, cert.user_id)
+        if cert.verification_status != "verified":
+            raise OwnershipError("domain ownership not verified")
+        if not cert.enabled:
+            raise ValueError("certificate disabled")
+        if not cert_ready_for_issue(cert, profile):
+            raise CredentialsError("certificate profile or deploy targets incomplete")
+
+        job: CertJob | None = None
+        if cert.status == "deploying":
+            latest = cert_repo.latest_job(self.db, cert_id)
+            if latest and latest.job_type == "deploy" and latest.status == "running":
+                job = latest
+            else:
+                self.db.rollback()
+                return
+        elif cert.status in _BUSY_STATUSES:
+            self.db.rollback()
+            return
+        else:
+            acme_home = Path(cert.acme_home)
+            key_path, chain_path = _pem_paths(cert, acme_home)
+            if not key_path.is_file() or not chain_path.is_file():
+                raise RuntimeError("certificate files not found in acme_home")
+
+            cert.status = "deploying"
+            job = cert_repo.create_job(self.db, cert_id, "deploy", "running", commit=False)
+            cert_repo.commit(self.db)
+            self.db.refresh(cert)
+            self.db.refresh(job)
+
+        acme_home = Path(cert.acme_home)
+        key_path, chain_path = _pem_paths(cert, acme_home)
+        if not key_path.is_file() or not chain_path.is_file():
+            raise RuntimeError("certificate files not found in acme_home")
+
+        secret_values: list[str] = []
+        try:
+            runtime = self.builder.build(
+                cert, self.settings, db=self.db, profile=profile
+            )
+            secret_values = _secret_list_from_env(runtime.env)
+            env_backup: dict[str, str | None] = {}
+            for k, v in runtime.env.items():
+                env_backup[k] = os.environ.get(k)
+                os.environ[k] = v
+            try:
+                config = load_config(runtime.config_path)
+                deploy_result = DeployService(config).deploy_from_files(
+                    issue_domain=cert.primary_domain,
+                    key_path=key_path,
+                    fullchain_path=chain_path,
+                    skip_probe=False,
+                )
+            finally:
+                for k, old in env_backup.items():
+                    if old is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = old
+
+            expires = self.runner.parse_expires_at(
+                runtime.acme_home, cert.primary_domain, cert.key_type
+            )
+            state = self.builder.read_state_to_db(runtime.state_path)
+            cert.status = "active"
+            cert.expires_at = expires
+            cert.state_json = _merge_deploy_state(cert, state)
+            cert.last_error = None
+            job.status = "success"
+            job.log_tail = f"deploy ok certID={deploy_result}"[:8192]
+        except (DeployError, CredentialsNotConfigured, RuntimeError) as exc:
+            cert.status = "failed"
+            cert.last_error = sanitize_error(str(exc), secret_values)[:2000]
+            job.status = "failed"
+            job.log_tail = sanitize_error(str(exc), secret_values)[:8192]
+            logger.exception("deploy failed cert_id=%s", cert_id)
+        except Exception as exc:  # noqa: BLE001
+            cert.status = "failed"
+            cert.last_error = sanitize_error(str(exc), secret_values)[:2000]
+            job.status = "failed"
+            job.log_tail = sanitize_error(str(exc), secret_values)[:8192]
+            logger.exception("deploy failed cert_id=%s", cert_id)
+        finally:
+            job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            cert_repo.save_job(self.db, job)
+            cert_repo.save(self.db, cert)
+
+    def _validate_manual_action(self, cert_id: int, user_id: int) -> Certificate:
+        cert = cert_repo.get_for_user(self.db, cert_id, user_id)
+        if not cert:
+            raise ValueError("certificate not found")
+        if not cert.enabled:
+            raise ValueError("certificate disabled")
+        if cert.verification_status != "verified":
+            raise OwnershipError("domain ownership not verified")
+        profile = credential_repo.get_profile(self.db, cert.profile_id, user_id)
+        if not cert_ready_for_issue(cert, profile):
+            raise CredentialsError("configure profile and deploy targets first")
+        if cert.status in _BUSY_STATUSES:
+            raise ValueError("job already running")
+        return cert
+
+    def deploy_now(self, cert_id: int, user_id: int) -> Certificate:
+        cert = self._validate_manual_action(cert_id, user_id)
+        if not cert.acme_home or cert.acme_home == "pending":
+            raise ValueError("acme_home not ready")
+        key_path, chain_path = _pem_paths(cert, Path(cert.acme_home))
+        if not key_path.is_file() or not chain_path.is_file():
+            raise ValueError("certificate files not found; issue or import first")
+        if cert.status not in ("active", "failed"):
+            raise ValueError("certificate not ready for deploy")
+        cert = cert_repo.get_for_update(self.db, cert_id)
+        cert.status = "deploying"
+        cert.last_error = None
+        cert_repo.create_job(self.db, cert_id, "deploy", "running", commit=False)
+        cert_repo.commit(self.db)
+        self.db.refresh(cert)
+        return cert
+
+    def renew_now(self, cert_id: int, user_id: int) -> Certificate:
+        cert = self._validate_manual_action(cert_id, user_id)
+        if cert.status not in ("active", "failed"):
+            raise ValueError("certificate not ready for renew")
+        cert = cert_repo.get_for_update(self.db, cert_id)
+        cert.status = "renewing"
+        cert.last_error = None
+        cert_repo.create_job(self.db, cert_id, "renew", "running", commit=False)
+        cert_repo.commit(self.db)
+        self.db.refresh(cert)
+        return cert
+
     def retry(self, cert_id: int, user_id: int) -> Certificate:
         cert = cert_repo.get_for_user(self.db, cert_id, user_id)
         if not cert:
@@ -298,7 +486,7 @@ class CertService:
         profile = credential_repo.get_profile(self.db, cert.profile_id, user_id)
         if not cert_ready_for_issue(cert, profile):
             raise CredentialsError("configure profile and deploy targets first")
-        if cert.status in ("issuing", "renewing"):
+        if cert.status in _BUSY_STATUSES:
             raise ValueError("job already running")
         return cert
 

@@ -65,7 +65,8 @@ uvicorn app.main:app --reload --port 8000
 2. **凭证**：列表 → 添加 / 编辑  
 3. **配置档**：列表 → 添加 / 编辑（DNS + 部署类型 + 凭证）  
 4. **添加域名**：选配置档 → `_qcert-verify` TXT 归属验证  
-5. 验证通过后签发 / 部署；cron 每日复检归属（CLI 迁入证书见 `cli_imported` 豁免）
+5. 验证通过后签发 / 部署；cron 每日复检归属（CLI 迁入证书见 `cli_imported` 豁免）  
+6. **证书列表**（已验证且启用）：**部署** — 仅上传本地 PEM 到 CDN/CLB；**续签** — 触发 acme.sh 续签（到期尚远时可能显示 no renewal needed）
 
 ## 浏览器与 CDN
 

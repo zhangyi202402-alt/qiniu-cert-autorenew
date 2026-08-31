@@ -198,12 +198,6 @@ class ConfigBuilder:
             encoding="utf-8",
         )
 
-        if cert.state_json:
-            state_path.write_text(
-                json.dumps(cert.state_json, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
-
         return RuntimeConfig(
             config_path=config_path,
             acme_home=acme_home,

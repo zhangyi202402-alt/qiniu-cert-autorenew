@@ -33,6 +33,10 @@ services:
       PYTHONPATH: /app:/app/web
     volumes:
       - web_data:/app/.local/web
+      # 开发时模板/CSS 改动即时生效，无需 rebuild
+      - ./app/templates:/app/web/app/templates:ro
+      - ./static:/app/web/static:ro
+      - ./app:/app/web/app:ro
     depends_on:
       mysql:
         condition: service_healthy

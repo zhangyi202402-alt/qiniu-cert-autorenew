@@ -245,5 +245,4 @@ def test_certs_list_shows_expiry_and_update_columns(client: TestClient):
     r = client.get("/certs")
     assert r.status_code == 200
     assert "有效期" in r.text
-    assert "最近更新" in r.text
-    assert "更新结果" in r.text
+    assert "最近任务" in r.text

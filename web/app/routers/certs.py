@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -24,6 +25,7 @@ from app.dependencies import get_current_user, get_current_user_optional
 from app.models import User
 from app.ownership_service import OwnershipService
 from app.repositories import cert_repo, credential_repo
+from app.renew_hint import job_was_no_renewal, renew_hint
 from app.schemas import (
     CertCreateForm,
     CertUpdateForm,
@@ -57,6 +59,22 @@ def _run_retry(cert_id: int) -> None:
     db = SessionLocal()
     try:
         CertService(db).issue_certificate(cert_id, job_type="retry")
+    finally:
+        db.close()
+
+
+def _run_deploy(cert_id: int) -> None:
+    db = SessionLocal()
+    try:
+        CertService(db).deploy_certificate(cert_id)
+    finally:
+        db.close()
+
+
+def _run_renew(cert_id: int) -> None:
+    db = SessionLocal()
+    try:
+        CertService(db).renew_certificate(cert_id)
     finally:
         db.close()
 
@@ -416,6 +434,38 @@ def profiles_delete(
         return RedirectResponse(f"/settings/profiles?err={exc}", status_code=303)
 
 
+from qiniu_cert.cert_utils import tls_not_after
+
+_DISPLAY_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _fmt_expiry_local(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    utc = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+    return utc.astimezone(_DISPLAY_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def _days_until(expires: datetime, now: datetime) -> int:
+    return int((expires - now).total_seconds() // 86400)
+
+
+def _probe_host_for_cert(cert) -> str:
+    """选取 TLS 探活域名：优先 deploy 目标，否则 primary。"""
+    for target in cert.deploy_targets or []:
+        if not isinstance(target, dict):
+            continue
+        if target.get("type") == "qiniu_cdn":
+            domains = target.get("domains") or []
+            if domains:
+                return str(domains[0]).strip().lower().rstrip(".")
+        if target.get("type") == "aliyun_clb":
+            probe = target.get("probe_host")
+            if probe:
+                return str(probe).strip().lower().rstrip(".")
+    return cert.primary_domain.rstrip(".")
+
+
 # ----- certificates -----
 
 
@@ -429,11 +479,60 @@ def certs_list(
     latest_jobs = {c.id: cert_repo.latest_job(db, c.id) for c in certs}
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     days_left: dict[int, int | None] = {}
+    deployed_expires: dict[int, datetime | None] = {}
+    deployed_days_left: dict[int, int | None] = {}
+    expiry_labels: dict[int, str | None] = {}
+    expiry_display: dict[int, str | None] = {}
+    expiry_mismatch: dict[int, bool] = {}
     for c in certs:
         if c.expires_at:
-            days_left[c.id] = int((c.expires_at - now).total_seconds() // 86400)
+            days_left[c.id] = _days_until(c.expires_at, now)
         else:
             days_left[c.id] = None
+
+        probe_host = _probe_host_for_cert(c)
+        live = tls_not_after(probe_host, server_hostname=c.primary_domain.rstrip("."))
+        deployed_expires[c.id] = live
+        if live:
+            deployed_days_left[c.id] = _days_until(live, now)
+        else:
+            deployed_days_left[c.id] = None
+
+        if live:
+            expiry_display[c.id] = _fmt_expiry_local(live)
+            expiry_labels[c.id] = "线上"
+            local_days = days_left.get(c.id)
+            live_days = deployed_days_left[c.id]
+            expiry_mismatch[c.id] = (
+                local_days is not None
+                and live_days is not None
+                and abs(local_days - live_days) > 1
+            )
+        elif c.expires_at:
+            expiry_display[c.id] = _fmt_expiry_local(c.expires_at)
+            expiry_labels[c.id] = "本地"
+            expiry_mismatch[c.id] = False
+        else:
+            expiry_display[c.id] = None
+            expiry_labels[c.id] = None
+            expiry_mismatch[c.id] = False
+    renew_hints = {}
+    job_no_renewal: dict[int, bool] = {}
+    for c in certs:
+        renew_hints[c.id] = renew_hint(
+            expires_at=c.expires_at,
+            renew_days=c.renew_days,
+            now=now,
+            enabled=c.enabled,
+            verification_status=c.verification_status,
+        )
+        job = latest_jobs.get(c.id)
+        job_no_renewal[c.id] = bool(
+            job
+            and job.job_type == "renew"
+            and job.status == "success"
+            and job_was_no_renewal(job.log_tail)
+        )
     return templates.TemplateResponse(
         request,
         "certs/list.html",
@@ -443,6 +542,16 @@ def certs_list(
             certs=certs,
             latest_jobs=latest_jobs,
             days_left=days_left,
+            deployed_days_left=deployed_days_left,
+            expiry_display=expiry_display,
+            expiry_labels=expiry_labels,
+            expiry_mismatch=expiry_mismatch,
+            local_expiry_display={
+                c.id: _fmt_expiry_local(c.expires_at) if c.expires_at else None
+                for c in certs
+            },
+            renew_hints=renew_hints,
+            job_no_renewal=job_no_renewal,
             has_profiles=_has_profiles(db, user.id),
             err=request.query_params.get("err"),
             ok=request.query_params.get("ok"),
@@ -745,7 +854,61 @@ def cert_retry(
         return RedirectResponse("/certs?err=csrf", status_code=303)
     except (ValueError, OwnershipError, CredentialsError) as exc:
         return RedirectResponse(f"/certs?err={exc}", status_code=303)
-    return RedirectResponse("/certs", status_code=303)
+    return RedirectResponse("/certs?ok=retry_started", status_code=303)
+
+
+@router.post("/certs/{cert_id}/deploy")
+def cert_deploy(
+    request: Request,
+    cert_id: int,
+    background_tasks: BackgroundTasks,
+    csrf_token: str = Form(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        validate_csrf(request, csrf_token)
+        CertService(db).deploy_now(cert_id, user.id)
+        background_tasks.add_task(_run_deploy, cert_id)
+    except CSRFError:
+        return RedirectResponse("/certs?err=csrf", status_code=303)
+    except (ValueError, OwnershipError, CredentialsError) as exc:
+        return RedirectResponse(f"/certs?err={exc}", status_code=303)
+    return RedirectResponse("/certs?ok=deploy_started", status_code=303)
+
+
+@router.post("/certs/{cert_id}/renew")
+def cert_renew(
+    request: Request,
+    cert_id: int,
+    background_tasks: BackgroundTasks,
+    csrf_token: str = Form(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        validate_csrf(request, csrf_token)
+        CertService(db).renew_now(cert_id, user.id)
+        background_tasks.add_task(_run_renew, cert_id)
+    except CSRFError:
+        return RedirectResponse("/certs?err=csrf", status_code=303)
+    except (ValueError, OwnershipError, CredentialsError) as exc:
+        return RedirectResponse(f"/certs?err={exc}", status_code=303)
+    cert = cert_repo.get_for_user(db, cert_id, user.id)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    hint = (
+        renew_hint(
+            expires_at=cert.expires_at,
+            renew_days=cert.renew_days,
+            now=now,
+            enabled=cert.enabled,
+            verification_status=cert.verification_status,
+        )
+        if cert
+        else None
+    )
+    ok_code = "renew_started" if hint and hint.in_window else "renew_early"
+    return RedirectResponse(f"/certs?ok={ok_code}", status_code=303)
 
 
 @router.post("/certs/{cert_id}/toggle")
@@ -763,7 +926,7 @@ def cert_toggle(
         return RedirectResponse("/certs?err=csrf", status_code=303)
     except ValueError as exc:
         return RedirectResponse(f"/certs?err={exc}", status_code=303)
-    return RedirectResponse("/certs", status_code=303)
+    return RedirectResponse("/certs?ok=toggled", status_code=303)
 
 
 @router.get("/api/certs/{cert_id}/status")
