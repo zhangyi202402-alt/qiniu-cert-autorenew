@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -425,6 +426,14 @@ def certs_list(
     db: Session = Depends(get_db),
 ):
     certs = cert_repo.list_for_user(db, user.id)
+    latest_jobs = {c.id: cert_repo.latest_job(db, c.id) for c in certs}
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    days_left: dict[int, int | None] = {}
+    for c in certs:
+        if c.expires_at:
+            days_left[c.id] = int((c.expires_at - now).total_seconds() // 86400)
+        else:
+            days_left[c.id] = None
     return templates.TemplateResponse(
         request,
         "certs/list.html",
@@ -432,8 +441,11 @@ def certs_list(
             request,
             user=user,
             certs=certs,
+            latest_jobs=latest_jobs,
+            days_left=days_left,
             has_profiles=_has_profiles(db, user.id),
             err=request.query_params.get("err"),
+            ok=request.query_params.get("ok"),
         ),
     )
 

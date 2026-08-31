@@ -33,6 +33,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app import settings as settings_mod
     from app import database as database_mod
     from app.database import Base
+    import app.models  # noqa: F401 — 确保 metadata 含全部表
 
     settings_mod.get_settings.cache_clear()
     engine = create_engine(
@@ -237,3 +238,12 @@ def test_profile_create_error_redirects_to_new(client: TestClient):
     )
     assert r.status_code == 303
     assert r.headers["location"].startswith("/settings/profiles/new?")
+
+
+def test_certs_list_shows_expiry_and_update_columns(client: TestClient):
+    _register(client)
+    r = client.get("/certs")
+    assert r.status_code == 200
+    assert "有效期" in r.text
+    assert "最近更新" in r.text
+    assert "更新结果" in r.text
