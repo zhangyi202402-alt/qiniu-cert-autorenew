@@ -1,0 +1,42 @@
+services:
+  mysql:
+    # mysql:5.7 仅有 amd64；本机为 arm64，使用已缓存的 8.0（兼容「MySQL 5.7+」）
+    image: mysql:8.0.44
+    environment:
+      MYSQL_DATABASE: qiniu_cert_web
+      MYSQL_USER: qcert
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootsecret}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootsecret}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile.web
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: mysql+pymysql://qcert:${MYSQL_PASSWORD:-secret}@mysql:3306/qiniu_cert_web?charset=utf8mb4
+      PROJECT_ROOT: /app
+      WEB_DATA_ROOT: /app/.local/web
+      PYTHONPATH: /app:/app/web
+    volumes:
+      - web_data:/app/.local/web
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  web_data:

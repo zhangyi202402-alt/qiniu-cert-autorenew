@@ -1,0 +1,2 @@
+0 2 * * * cd /app/web && python -m app.jobs.verify_all >> /app/.local/web/cron.log 2>&1
+0 3 * * * cd /app/web && python -m app.jobs.renew_all >> /app/.local/web/cron.log 2>&1

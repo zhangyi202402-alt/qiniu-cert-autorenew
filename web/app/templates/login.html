@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}登录 — SSL 证书服务{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:420px;margin:2rem auto;">
+  <h1>登录</h1>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next or '/certs' }}">
+    <label>邮箱</label>
+    <input type="email" name="email" required autocomplete="username">
+    <label>密码</label>
+    <input type="password" name="password" required autocomplete="current-password">
+    <button type="submit">登录</button>
+  </form>
+  <p class="hint" style="margin-top:1rem;">没有账号？<a href="/register">注册</a></p>
+</div>
+{% endblock %}

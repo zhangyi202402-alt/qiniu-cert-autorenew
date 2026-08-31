@@ -1,0 +1,51 @@
+FROM docker.1ms.run/python:3.12-slim-bookworm
+
+ARG SUPERCRONIC_VERSION=v0.2.33
+ARG TARGETARCH
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        dnsutils \
+        git \
+        openssl \
+    && arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "${arch}" in \
+        arm64|aarch64) SUPERCRONIC_ARCH=arm64 ;; \
+        amd64|x86_64) SUPERCRONIC_ARCH=amd64 ;; \
+        *) echo "unsupported arch: ${arch}" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://ghfast.top/https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${SUPERCRONIC_ARCH}" \
+        -o /usr/local/bin/supercronic \
+    && chmod +x /usr/local/bin/supercronic \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+COPY web/requirements.txt /app/web/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt -r /app/web/requirements.txt
+
+COPY qiniu_cert/ /app/qiniu_cert/
+COPY scripts/ /app/scripts/
+COPY web/ /app/web/
+
+RUN chmod +x /app/scripts/*.sh /app/web/scripts/*.sh \
+    && useradd -m -u 10001 app \
+    && mkdir -p /app/.local/web \
+    && chown -R app:app /app/.local
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app:/app/web \
+    PROJECT_ROOT=/app \
+    WEB_DATA_ROOT=/app/.local/web \
+    QINIU_CERT_ROOT=/app
+
+WORKDIR /app/web
+USER app
+
+EXPOSE 8000
+
+ENTRYPOINT ["/app/web/scripts/docker-entrypoint.sh"]

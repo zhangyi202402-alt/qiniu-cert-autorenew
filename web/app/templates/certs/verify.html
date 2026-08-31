@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}归属验证 — {{ cert.name }}{% endblock %}
+{% block content %}
+<div class="panel">
+  <h1>域名归属验证</h1>
+  <p class="hint">请在 DNS 控制台<strong>手动</strong>添加以下 TXT 记录（与 ACME 的 <code>_acme-challenge</code> 不同）。</p>
+  {% if message %}<div class="{% if '成功' in message %}ok{% else %}error{% endif %}">{{ message }}</div>{% endif %}
+  {% if cert.verification_status == 'lost' %}
+  <div class="warn">当前归属状态为 lost，续签已暂停。恢复 TXT 并重新检查后即可恢复续签。</div>
+  {% endif %}
+  <table>
+    <tr><th>主机记录</th><td><code>_qcert-verify</code></td></tr>
+    <tr><th>域名</th><td><code>{{ cert.primary_domain }}</code></td></tr>
+    <tr><th>完整记录名</th><td><code>{{ cert.verification_host }}</code></td></tr>
+    <tr><th>记录类型</th><td>TXT</td></tr>
+    <tr><th>记录值</th><td><code>{{ expected_txt }}</code></td></tr>
+  </table>
+  <p class="hint" style="margin-top:1rem;">当前状态：
+    <span class="badge {{ cert.verification_status }}">{{ cert.verification_status }}</span>
+    / 证书：<span class="badge {{ cert.status }}">{{ cert.status }}</span>
+  </p>
+  {% if not has_profiles %}
+  <div class="warn">配置档缺失，验证通过后无法自动签发。请先 <a href="/settings/profiles">配置档</a>。</div>
+  {% endif %}
+  <form method="post" action="/certs/{{ cert.id }}/verify/check">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">检查验证</button>
+    <a class="btn secondary" href="/certs" style="margin-left:0.5rem;">返回列表</a>
+  </form>
+</div>
+{% endblock %}

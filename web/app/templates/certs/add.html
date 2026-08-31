@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}添加域名 — SSL 证书服务{% endblock %}
+{% block content %}
+<div class="panel">
+  <h1>添加域名</h1>
+  <p class="hint">选择配置档后填写签发域名与部署目标；切换配置档可载入建议目标预填。</p>
+  {% if not profiles %}
+  <div class="warn">请先创建 <a href="/settings/profiles">配置档</a>（以及 <a href="/settings/credentials">凭证</a>）。</div>
+  {% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/certs/add" id="add-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>名称</label>
+    <input name="name" required maxlength="128" value="{{ form.name or '' }}" placeholder="例如 main-cdn">
+    <label>配置档</label>
+    <select name="profile_id" id="profile_id" required {% if not profiles %}disabled{% endif %}>
+      {% for p in profiles %}
+      <option value="{{ p.id }}" data-type="{{ p.deploy_type }}" {% if form.profile_id and form.profile_id|string == p.id|string %}selected{% endif %}>{{ p.name }} ({{ p.deploy_type }})</option>
+      {% endfor %}
+    </select>
+    <label>ACME 邮箱</label>
+    <input type="email" name="acme_email" required value="{{ form.acme_email or '' }}" placeholder="ops@example.com">
+    <label>签发域名（每行一个，支持 *.example.com）</label>
+    <textarea name="issue_domains" required placeholder="example.com&#10;*.example.com">{{ form.issue_domains or '' }}</textarea>
+
+    <div id="cdn-box">
+      <label>七牛 CDN 加速域名（每行一个，须被签发域名覆盖）</label>
+      <textarea name="cdn_domains" id="cdn_domains" placeholder="cdn.example.com">{{ form.cdn_domains or '' }}</textarea>
+    </div>
+    <div id="clb-box" style="display:none;">
+      <label>阿里 CLB 目标（每行：region_id,load_balancer_id[,port][,probe_host]）</label>
+      <textarea name="clb_targets" id="clb_targets" placeholder="cn-beijing,lb-xxxxx,443,www.example.com">{{ form.clb_targets or '' }}</textarea>
+    </div>
+
+    <label>续签提前天数</label>
+    <input type="number" name="renew_days" value="{{ form.renew_days or default_renew_days }}" min="7" max="60">
+    <button type="submit" {% if not profiles %}disabled{% endif %}>下一步：归属验证</button>
+  </form>
+</div>
+<script>
+(function(){
+  var meta = {{ profiles_json|safe }};
+  var sel = document.getElementById('profile_id');
+  var cdnBox = document.getElementById('cdn-box');
+  var clbBox = document.getElementById('clb-box');
+  var cdn = document.getElementById('cdn_domains');
+  var clb = document.getElementById('clb_targets');
+  var lastProfile = null;
+  function suggestedText(type, suggested){
+    if(!suggested || !suggested.length) return '';
+    var lines = [];
+    suggested.forEach(function(t){
+      if(type==='qiniu_cdn' && t.type==='qiniu_cdn' && t.domains){
+        lines = lines.concat(t.domains);
+      }
+      if(type==='aliyun_clb' && t.type==='aliyun_clb'){
+        var p = [t.region_id, t.load_balancer_id, t.listener_port||443];
+        if(t.probe_host) p.push(t.probe_host);
+        lines.push(p.join(','));
+      }
+    });
+    return lines.join('\n');
+  }
+  function sync(fromUser){
+    if(!sel || !sel.options.length) return;
+    var id = sel.value;
+    var info = meta[id] || {};
+    var t = info.deploy_type || '';
+    cdnBox.style.display = (t === 'qiniu_cdn') ? '' : 'none';
+    clbBox.style.display = (t === 'aliyun_clb') ? '' : 'none';
+    if(fromUser && id !== lastProfile){
+      var pre = suggestedText(t, info.suggested||[]);
+      if(t==='qiniu_cdn'){ cdn.value = pre; clb.value=''; }
+      if(t==='aliyun_clb'){ clb.value = pre; cdn.value=''; }
+    }
+    lastProfile = id;
+  }
+  if(sel){
+    sel.addEventListener('change', function(){ sync(true); });
+    sync(false);
+    // 首次进入且字段空时预填
+    var info = meta[sel.value]||{};
+    if(info.deploy_type==='qiniu_cdn' && !cdn.value) cdn.value = suggestedText('qiniu_cdn', info.suggested||[]);
+    if(info.deploy_type==='aliyun_clb' && !clb.value) clb.value = suggestedText('aliyun_clb', info.suggested||[]);
+    sync(false);
+  }
+})();
+</script>
+{% endblock %}

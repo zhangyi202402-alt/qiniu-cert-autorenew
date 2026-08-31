@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}编辑证书 — {{ cert.name }}{% endblock %}
+{% block content %}
+<div class="panel">
+  <h1>编辑证书</h1>
+  <p class="hint">可改绑配置档、签发域名与部署目标。若主域名变更，归属验证将重置为 unverified。</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/certs/{{ cert.id }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>名称</label>
+    <input name="name" required maxlength="128" value="{{ form.name }}">
+    <label>配置档</label>
+    <select name="profile_id" id="profile_id" required>
+      {% for p in profiles %}
+      <option value="{{ p.id }}" data-type="{{ p.deploy_type }}" {% if form.profile_id|string == p.id|string %}selected{% endif %}>{{ p.name }} ({{ p.deploy_type }})</option>
+      {% endfor %}
+    </select>
+    <label>ACME 邮箱</label>
+    <input type="email" name="acme_email" required value="{{ form.acme_email }}">
+    <label>签发域名</label>
+    <textarea name="issue_domains" required>{{ form.issue_domains }}</textarea>
+    <div id="cdn-box">
+      <label>七牛 CDN 域名</label>
+      <textarea name="cdn_domains" id="cdn_domains">{{ form.cdn_domains }}</textarea>
+    </div>
+    <div id="clb-box" style="display:none;">
+      <label>阿里 CLB 目标</label>
+      <textarea name="clb_targets" id="clb_targets">{{ form.clb_targets }}</textarea>
+    </div>
+    <label>续签提前天数</label>
+    <input type="number" name="renew_days" value="{{ form.renew_days }}" min="7" max="60">
+    <button type="submit">保存</button>
+    <a class="btn secondary" href="/certs" style="margin-left:0.5rem;">取消</a>
+  </form>
+</div>
+<script>
+(function(){
+  var sel = document.getElementById('profile_id');
+  var cdnBox = document.getElementById('cdn-box');
+  var clbBox = document.getElementById('clb-box');
+  function sync(){
+    if(!sel || !sel.options.length) return;
+    var t = sel.options[sel.selectedIndex].getAttribute('data-type') || '';
+    cdnBox.style.display = (t === 'qiniu_cdn') ? '' : 'none';
+    clbBox.style.display = (t === 'aliyun_clb') ? '' : 'none';
+  }
+  if(sel){ sel.addEventListener('change', sync); sync(); }
+})();
+</script>
+{% endblock %}
