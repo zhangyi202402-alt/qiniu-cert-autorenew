@@ -64,3 +64,20 @@ uvicorn app.main:app --reload --port 8000
 内网环境请将 `web/app/templates/base.html` 中 import map 与字体链接改为可达镜像。
 
 配置档页的凭证下拉为原生 `<select>`（便于动态填充兼容矩阵）；其余主控件为 Material Web。
+
+## 从 CLI config 导入（可选）
+
+把仓库根 `config.yaml` + `.env` 里的密钥导入当前 Web 用户（幂等，同名跳过）：
+
+```bash
+cd web
+PYTHONPATH=..:. \
+  PROJECT_ROOT="$(pwd)/.." WEB_DATA_ROOT="$(pwd)/../.local/web" \
+  ../.venv/bin/python scripts/import_cli_config.py --email 你的登录邮箱
+
+# 预览不写库
+../.venv/bin/python scripts/import_cli_config.py --email 你的登录邮箱 --dry-run
+```
+
+宿主机访问 Docker MySQL 时脚本会自动把 `mysql:3306` 改成 `127.0.0.1:3307`。  
+导入后证书仍是 `unverified`，需按验证页补 TXT 后再签发。
