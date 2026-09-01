@@ -66,7 +66,19 @@ uvicorn app.main:app --reload --port 8000
 3. **配置档**：列表 → 添加 / 编辑（DNS + 部署类型 + 凭证）  
 4. **添加域名**：选配置档 → `_qcert-verify` TXT 归属验证  
 5. 验证通过后签发 / 部署；cron 每日复检归属（CLI 迁入证书见 `cli_imported` 豁免）  
-6. **证书列表**（已验证且启用）：**部署** — 仅上传本地 PEM 到 CDN/CLB；**续签** — 触发 acme.sh 续签（到期尚远时可能显示 no renewal needed）
+6. **证书列表**（已验证且启用）：
+   - **尚未签发**：主按钮为 **签发**（勿点续签/部署）
+   - **已签发**：可 **部署**（上传本地 PEM 到七牛 CDN / 阿里云 CDN / CLB）与 **续签**（触发 acme.sh；到期尚远时可能 no renewal needed）
+
+## ACME CA（测试 / 生产）
+
+`web/.env` 中 `ACME_CA` 默认 `letsencrypt_test`（Staging，浏览器不可信）。联调通过后改为：
+
+```env
+ACME_CA=letsencrypt
+```
+
+然后 **`docker compose -f docker-compose.web.yml up -d`**（需 recreate 才加载新环境变量），再对目标证书 **强制重签**（列表「签发」或失败后的「重试」）。仅 `restart` 不会更新已注入的 `ACME_CA`。
 
 ## 浏览器与 CDN
 

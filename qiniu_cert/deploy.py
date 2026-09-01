@@ -9,6 +9,7 @@ from qiniu_cert.cert_utils import DeployError, read_pem
 from qiniu_cert.config import (
     AppConfig,
     CertificateConfig,
+    TargetAliyunCdn,
     TargetAliyunClb,
     TargetQiniuCdn,
     find_cert_by_issue_domain,
@@ -30,8 +31,15 @@ class DeployService:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.state = StateStore(config.state_file)
-        self.qiniu = QiniuCdnProvider(config, state=self.state)
+        self._qiniu: QiniuCdnProvider | None = None
         self._clb = None
+        self._aliyun_cdn = None
+
+    @property
+    def qiniu(self) -> QiniuCdnProvider:
+        if self._qiniu is None:
+            self._qiniu = QiniuCdnProvider(self.config, state=self.state)
+        return self._qiniu
 
     @property
     def client(self):
@@ -90,6 +98,17 @@ class DeployService:
                         skip_probe=skip_probe,
                     )
                     parts.append(f"clb:{cert_id}" if len(targets) > 1 else cert_id)
+                elif isinstance(target, TargetAliyunCdn):
+                    alicdn = self._get_aliyun_cdn_provider()
+                    cert_id = alicdn.deploy(
+                        cert_cfg,
+                        target,
+                        issue_domain,
+                        key_pem,
+                        fullchain_pem,
+                        skip_probe=skip_probe,
+                    )
+                    parts.append(f"aliyun_cdn:{cert_id}" if len(targets) > 1 else cert_id)
                 else:
                     failures.append(f"unknown target type: {getattr(target, 'type', target)}")
             except DeployError as exc:
@@ -111,10 +130,22 @@ class DeployService:
             self._clb = AliyunClbProvider(self.config, state=self.state)
         return self._clb
 
+    def _get_aliyun_cdn_provider(self):
+        if not hasattr(self, "_aliyun_cdn") or self._aliyun_cdn is None:
+            from qiniu_cert.providers.aliyun_cdn import AliyunCdnProvider
+
+            self._aliyun_cdn = AliyunCdnProvider(self.config, state=self.state)
+        return self._aliyun_cdn
+
     def cleanup_old_certs(self) -> list[str]:
-        deleted = self.qiniu.cleanup_old_certs()
+        deleted: list[str] = []
         states = self.state.load()
+        if any(not k.startswith(("clb:", "aliyun_cdn:")) for k in states):
+            deleted.extend(self.qiniu.cleanup_old_certs())
         if any(k.startswith("clb:") for k in states):
             clb = self._get_clb_provider()
             deleted.extend(clb.cleanup_old_certs())
+        if any(k.startswith("aliyun_cdn:") for k in states):
+            alicdn = self._get_aliyun_cdn_provider()
+            deleted.extend(alicdn.cleanup_old_certs())
         return deleted

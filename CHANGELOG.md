@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **阿里云 CDN HTTPS 自动换证**：`targets[].type: aliyun_cdn`，OpenAPI `SetCdnDomainSSLCertificate`；CLI `cdn_wrapper.sh`；Web 配置档 `deploy_type=aliyun_cdn`（见 [docs/CDN.md](docs/CDN.md)）
+- **DeployService 懒加载七牛客户端**：纯 `aliyun_cdn` / CLB 配置不再因空七牛 AK/SK 在构造阶段失败
+- **Web 签发 / 续签 / 部署分流**：未签发（无 `expires_at` / 无 PEM）时列表显示「签发」，拒绝空续签与空部署；续签成功后校验证书文件存在
+
 ## 3.0.0 — 2026-08-31
 
 **Web 控制台主线；与 v2 CLI 工作流不兼容（Breaking）。**

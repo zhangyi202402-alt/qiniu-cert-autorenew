@@ -192,7 +192,7 @@ class QiniuCdnProvider:
     def cleanup_old_certs(self) -> list[str]:
         deleted: list[str] = []
         for domain, cert_id in self.state.list_pending_cleanup():
-            if domain.startswith("clb:"):
+            if domain.startswith("clb:") or domain.startswith("aliyun_cdn:"):
                 continue
             try:
                 self.client.delete_cert(cert_id)

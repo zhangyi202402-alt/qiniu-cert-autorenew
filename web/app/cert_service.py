@@ -273,6 +273,13 @@ class CertService:
             expires = self.runner.parse_expires_at(
                 runtime.acme_home, cert.primary_domain, cert.key_type
             )
+            key_path, chain_path = _pem_paths(cert, Path(runtime.acme_home))
+            if not expires or not key_path.is_file() or not chain_path.is_file():
+                if job_type == "renew" and not old_expires:
+                    raise RuntimeError(
+                        "certificate not issued yet; use retry to issue first"
+                    )
+                raise RuntimeError("certificate files not found after acme run")
             state = self.builder.read_state_to_db(runtime.state_path)
 
             if job_type == "renew" and old_expires and expires and expires <= old_expires:
@@ -467,6 +474,8 @@ class CertService:
 
     def renew_now(self, cert_id: int, user_id: int) -> Certificate:
         cert = self._validate_manual_action(cert_id, user_id)
+        if not cert.expires_at:
+            raise ValueError("certificate not issued yet; use retry to issue first")
         if cert.status not in ("active", "failed"):
             raise ValueError("certificate not ready for renew")
         cert = cert_repo.get_for_update(self.db, cert_id)

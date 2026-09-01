@@ -14,6 +14,7 @@ fi
 
 ln -sf "${ROOT}/scripts/qiniu_wrapper.sh" "${ACME_HOME}/deploy/qiniu_wrapper.sh"
 ln -sf "${ROOT}/scripts/clb_wrapper.sh" "${ACME_HOME}/deploy/clb_wrapper.sh"
+ln -sf "${ROOT}/scripts/cdn_wrapper.sh" "${ACME_HOME}/deploy/cdn_wrapper.sh"
 
 bash "$(dirname "$0")/acme-install.sh"
 bash "$(dirname "$0")/acme-issue-all.sh"

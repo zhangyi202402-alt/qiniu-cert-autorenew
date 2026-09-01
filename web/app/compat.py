@@ -10,6 +10,7 @@ DNS_PROVIDER_TO_CLOUD = {
 DEPLOY_TYPE_TO_CLOUD = {
     "qiniu_cdn": "qiniu",
     "aliyun_clb": "aliyun",
+    "aliyun_cdn": "aliyun",
 }
 
 DNS_ENV_MAP: dict[str, dict[str, str]] = {
@@ -86,6 +87,16 @@ def validate_deploy_targets(
                     raise ValueError(f"CDN 域名 {d} 未被签发域名覆盖")
             https = raw.get("https") if isinstance(raw.get("https"), dict) else {}
             cleaned.append({"type": "qiniu_cdn", "domains": norm, "https": https})
+        elif ttype == "aliyun_cdn":
+            domains = raw.get("domains") or []
+            if not isinstance(domains, list) or not domains:
+                raise ValueError("aliyun_cdn 目标需要 domains 列表")
+            norm = [str(d).strip().lower().rstrip(".") for d in domains]
+            for d in norm:
+                if not issue_domains_cover(issue_domains, d):
+                    raise ValueError(f"CDN 域名 {d} 未被签发域名覆盖")
+            https = raw.get("https") if isinstance(raw.get("https"), dict) else {}
+            cleaned.append({"type": "aliyun_cdn", "domains": norm, "https": https})
         elif ttype == "aliyun_clb":
             region = str(raw.get("region_id") or "").strip()
             lb = str(raw.get("load_balancer_id") or "").strip()

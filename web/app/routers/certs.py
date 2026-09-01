@@ -264,6 +264,8 @@ def _suggested_targets_textarea(deploy_type: str, suggested) -> str:
     for t in suggested or []:
         if deploy_type == "qiniu_cdn" and t.get("type") == "qiniu_cdn":
             lines.extend(t.get("domains") or [])
+        elif deploy_type == "aliyun_cdn" and t.get("type") == "aliyun_cdn":
+            lines.extend(t.get("domains") or [])
         elif deploy_type == "aliyun_clb" and t.get("type") == "aliyun_clb":
             parts = [
                 t.get("region_id", ""),
@@ -455,7 +457,7 @@ def _probe_host_for_cert(cert) -> str:
     for target in cert.deploy_targets or []:
         if not isinstance(target, dict):
             continue
-        if target.get("type") == "qiniu_cdn":
+        if target.get("type") in ("qiniu_cdn", "aliyun_cdn"):
             domains = target.get("domains") or []
             if domains:
                 return str(domains[0]).strip().lower().rstrip(".")

@@ -39,9 +39,9 @@ def parse_deploy_targets_form(
     clb_targets_text: str = "",
 ) -> list[dict]:
     """从表单解析部署目标。CLB 为每行 JSON 或 CSV: region,lb_id,port[,probe_host]。"""
-    if deploy_type == "qiniu_cdn":
+    if deploy_type in ("qiniu_cdn", "aliyun_cdn"):
         domains = parse_domain_lines(cdn_domains_text)
-        return [{"type": "qiniu_cdn", "domains": domains, "https": {}}]
+        return [{"type": deploy_type, "domains": domains, "https": {}}]
     if deploy_type == "aliyun_clb":
         targets: list[dict] = []
         for line in clb_targets_text.splitlines():
@@ -112,10 +112,10 @@ def format_deploy_targets_for_form(
     deploy_type: str, targets: list[dict]
 ) -> dict[str, str]:
     """编辑页回填：cdn_domains / clb_targets 文本。"""
-    if deploy_type == "qiniu_cdn":
+    if deploy_type in ("qiniu_cdn", "aliyun_cdn"):
         domains: list[str] = []
         for t in targets or []:
-            if t.get("type") == "qiniu_cdn":
+            if t.get("type") == deploy_type:
                 domains.extend(t.get("domains") or [])
         return {"cdn_domains": "\n".join(domains), "clb_targets": ""}
     lines: list[str] = []
@@ -139,6 +139,6 @@ def parse_suggested_targets_text(deploy_type: str, text: str) -> list[dict] | No
         return None
     return parse_deploy_targets_form(
         deploy_type,
-        cdn_domains_text=text if deploy_type == "qiniu_cdn" else "",
+        cdn_domains_text=text if deploy_type in ("qiniu_cdn", "aliyun_cdn") else "",
         clb_targets_text=text if deploy_type == "aliyun_clb" else "",
     )

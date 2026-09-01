@@ -123,6 +123,7 @@
           <div class="cert-actions">
             {% if c.enabled and c.verification_status == 'verified' and c.status in ('active', 'failed') %}
             <div class="cert-actions__primary">
+              {% if c.expires_at %}
               <form method="post" action="/certs/{{ c.id }}/deploy" class="cert-action-form" data-busy-label="部署中…">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn--outline">部署</button>
@@ -131,13 +132,19 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn--tonal{% if hint and not hint.in_window %} btn--muted{% endif %}">续签{% if hint and hint.in_window %}<span class="btn-tag">可换证</span>{% endif %}</button>
               </form>
+              {% else %}
+              <form method="post" action="/certs/{{ c.id }}/retry" class="cert-action-form" data-busy-label="签发中…">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn--primary">签发</button>
+              </form>
+              {% endif %}
             </div>
             {% endif %}
             <div class="cert-actions__links">
               <a href="/certs/{{ c.id }}/verify">验证</a>
               <span class="sep">·</span>
               <a href="/certs/{{ c.id }}/edit">编辑</a>
-              {% if c.status == 'failed' and c.verification_status == 'verified' %}
+              {% if c.expires_at and c.status == 'failed' and c.verification_status == 'verified' %}
               <span class="sep">·</span>
               <form method="post" action="/certs/{{ c.id }}/retry" class="cert-action-form cert-action-form--inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

@@ -135,6 +135,30 @@ class ConfigBuilder:
             }
             env["QINIU_AK"] = str(dep_secret.get("access_key") or "")
             env["QINIU_SK"] = str(dep_secret.get("secret_key") or "")
+        elif profile.deploy_type == "aliyun_cdn":
+            targets = []
+            https = defaults.get("https") or {
+                "force_https": False,
+                "http2_enable": True,
+            }
+            for t in cert.deploy_targets or []:
+                if t.get("type") != "aliyun_cdn":
+                    continue
+                targets.append(
+                    {
+                        "type": "aliyun_cdn",
+                        "domains": t.get("domains") or [],
+                        "https": t.get("https") or https,
+                    }
+                )
+            cert_entry["targets"] = targets
+            payload["aliyun"] = {
+                "access_key": "${ALIYUN_AK}",
+                "secret_key": "${ALIYUN_SK}",
+            }
+            payload["qiniu"] = {"access_key": "", "secret_key": ""}
+            env["ALIYUN_AK"] = str(dep_secret.get("access_key") or "")
+            env["ALIYUN_SK"] = str(dep_secret.get("secret_key") or "")
         elif profile.deploy_type == "aliyun_clb":
             targets = []
             for t in cert.deploy_targets or []:

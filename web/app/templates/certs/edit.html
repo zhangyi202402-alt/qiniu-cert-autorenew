@@ -18,7 +18,7 @@
     <label class="field-label" for="issue_domains">签发域名</label>
     <textarea class="native-field" name="issue_domains" id="issue_domains" required>{{ form.issue_domains }}</textarea>
     <div id="cdn-box">
-      <label class="field-label" for="cdn_domains">七牛 CDN 域名</label>
+      <label class="field-label" for="cdn_domains">CDN 加速域名</label>
       <textarea class="native-field" name="cdn_domains" id="cdn_domains">{{ form.cdn_domains }}</textarea>
     </div>
     <div id="clb-box" style="display:none;">
@@ -40,7 +40,7 @@
   function sync(){
     if(!sel || !sel.options.length) return;
     var t = sel.options[sel.selectedIndex].getAttribute('data-type') || '';
-    cdnBox.style.display = (t === 'qiniu_cdn') ? '' : 'none';
+    cdnBox.style.display = (t === 'qiniu_cdn' || t === 'aliyun_cdn') ? '' : 'none';
     clbBox.style.display = (t === 'aliyun_clb') ? '' : 'none';
   }
   if(sel){ sel.addEventListener('change', sync); sync(); }

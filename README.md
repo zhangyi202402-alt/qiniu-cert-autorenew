@@ -1,8 +1,8 @@
 # qiniu-cert-autorenew
 
-Automated Let's Encrypt certificate renewal and deployment for **Qiniu CDN** and **Aliyun CLB** (acme.sh + deploy wrapper).
+Automated Let's Encrypt certificate renewal and deployment for **Qiniu CDN**, **Aliyun CDN**, and **Aliyun CLB** (acme.sh + deploy wrapper).
 
-七牛 CDN / 阿里云 CLB HTTPS 证书全自动续签：ACME（Let's Encrypt）+ acme.sh + 自研 Deploy Wrapper。
+七牛 CDN / 阿里云 CDN / 阿里云 CLB HTTPS 证书全自动续签：ACME（Let's Encrypt）+ acme.sh + 自研 Deploy Wrapper。
 
 **Maintained by [卡拉丁 Kalading](https://www.kalading.com)**（北京卡拉丁汽车技术服务有限公司）· Author: **zhangyi**
 
@@ -15,15 +15,16 @@ Automated Let's Encrypt certificate renewal and deployment for **Qiniu CDN** and
 ```
 acme.sh --cron（.local/acme）
   → DNS-01 续签
-  → deploy-hook qiniu_wrapper / clb_wrapper
+  → deploy-hook qiniu_wrapper / cdn_wrapper / clb_wrapper
   → DeployRouter
        ├─ 七牛 CDN：upload sslcert → 绑定域名
+       ├─ 阿里云 CDN：SetCdnDomainSSLCertificate（upload PEM）
        └─ 阿里云 CLB：CAS UploadUserCertificate → SLB 引用 → 换 HTTPS 监听（+SNI 扩展域）
   → TLS 探活 + .local/state/state.json
   → 旧证延迟清理
 ```
 
-CLB 说明见 [docs/CLB.md](docs/CLB.md)。
+CLB 说明见 [docs/CLB.md](docs/CLB.md)。阿里云 CDN 见 [docs/CDN.md](docs/CDN.md)。
 
 ## 目录结构
 
@@ -37,14 +38,18 @@ qiniu-cert-autorenew/
 │   ├── deploy.py              # DeployRouter
 │   ├── clients/
 │   │   ├── aliyun_cas.py      # 证书服务（CAS）上传
+│   │   ├── aliyun_cdn.py      # CDN SetCdnDomainSSLCertificate
 │   │   └── aliyun_slb.py      # CLB OpenAPI
 │   └── providers/
 │       ├── qiniu_cdn.py
+│       ├── aliyun_cdn.py
 │       └── aliyun_clb.py
 ├── scripts/
 │   ├── qiniu_wrapper.sh
+│   ├── cdn_wrapper.sh
 │   ├── clb_wrapper.sh
 │   └── ...
+├── docs/CDN.md
 ├── docs/CLB.md
 ├── Dockerfile
 └── docker-compose.yml
@@ -63,11 +68,12 @@ Docker 与裸机共用 **一份 `config.yaml`**，运行时数据均在项目 `.
 ## 特性
 
 - 官方双端点 + 双鉴权（fusion QBox / api Qiniu）
+- **阿里云 CDN**：`SetCdnDomainSSLCertificate` 直传 PEM，支持 EC-256 / RSA
 - **阿里云 CLB**：经 CAS 上传完整 PEM 链（含 LE 交叉签），再引用到 SLB 换绑
 - 多目标部署失败自动记录明细（成功目标保留新证，不回滚）
 - 证书 `enabled: false` 可跳过签发/探活/部署（便于维护窗口）
 - SAN 覆盖校验、TLS 探活（可 `--skip-probe` 或直连 CLB VIP）
-- 旧 certID 延迟清理（7 天）
+- 旧 certID 延迟清理（7 天；CDN upload 模式仅清本地 state）
 - 钉钉 / 飞书 webhook 告警
 
 ## Web 控制台（v3 推荐）

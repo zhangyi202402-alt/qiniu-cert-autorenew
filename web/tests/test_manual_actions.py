@@ -170,6 +170,14 @@ def test_deploy_certificate_success(db, settings):
     assert job.status == "success"
 
 
+def test_renew_now_rejects_unissued(db, settings):
+    user, cert, svc = _active_cert(db, settings)
+    cert.expires_at = None
+    db.commit()
+    with pytest.raises(ValueError, match="certificate not issued yet"):
+        svc.renew_now(cert.id, user.id)
+
+
 def test_renew_now_ok(db, settings):
     user, cert, svc = _active_cert(db, settings)
     returned = svc.renew_now(cert.id, user.id)
@@ -177,7 +185,8 @@ def test_renew_now_ok(db, settings):
 
 
 def test_list_template_has_manual_buttons():
-    text = Path("app/templates/certs/list.html").read_text(encoding="utf-8")
+    template = Path(__file__).resolve().parent.parent / "app/templates/certs/list.html"
+    text = template.read_text(encoding="utf-8")
     assert "部署" in text
     assert "续签" in text
     assert "/deploy" in text

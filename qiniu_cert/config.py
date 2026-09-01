@@ -68,7 +68,16 @@ class TargetAliyunClb:
     type: str = "aliyun_clb"
 
 
-DeployTarget = TargetQiniuCdn | TargetAliyunClb
+@dataclass
+class TargetAliyunCdn:
+    """阿里云 CDN 加速域名 HTTPS 证书部署目标。"""
+
+    domains: list[str]
+    https: HttpsConfig = field(default_factory=HttpsConfig)
+    type: str = "aliyun_cdn"
+
+
+DeployTarget = TargetQiniuCdn | TargetAliyunClb | TargetAliyunCdn
 
 
 @dataclass
@@ -150,6 +159,12 @@ def _parse_targets(
                     probe_host=t.get("probe_host"),
                 )
             )
+        elif ttype == "aliyun_cdn":
+            domains = list(t.get("domains") or [])
+            if not domains:
+                raise ValueError("aliyun_cdn target requires domains")
+            https = _parse_https(t.get("https")) if t.get("https") else default_https
+            targets.append(TargetAliyunCdn(domains=domains, https=https))
         else:
             raise ValueError(f"unknown target type: {ttype}")
     return targets
@@ -291,5 +306,7 @@ def find_cert_by_cdn_domain(config: AppConfig, cdn_domain: str) -> CertificateCo
             return cert
         for t in iter_targets(cert):
             if isinstance(t, TargetQiniuCdn) and cdn_domain in t.domains:
+                return cert
+            if isinstance(t, TargetAliyunCdn) and cdn_domain in t.domains:
                 return cert
     return None

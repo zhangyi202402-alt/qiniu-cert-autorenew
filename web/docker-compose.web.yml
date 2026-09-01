@@ -37,6 +37,7 @@ services:
       - ./app/templates:/app/web/app/templates:ro
       - ./static:/app/web/static:ro
       - ./app:/app/web/app:ro
+      - ../qiniu_cert:/app/qiniu_cert:ro
     depends_on:
       mysql:
         condition: service_healthy

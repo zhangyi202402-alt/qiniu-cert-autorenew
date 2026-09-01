@@ -167,3 +167,44 @@ def test_clb_forces_rsa(db, tmp_path: Path):
     raw = yaml.safe_load(runtime.config_path.read_text(encoding="utf-8"))
     assert raw["certificates"][0]["targets"][0]["type"] == "aliyun_clb"
     assert runtime.env["ALIYUN_AK"] == "A"
+
+
+def test_config_builder_aliyun_cdn(db, tmp_path: Path):
+    settings = _settings(tmp_path)
+    user = register_user(db, "cdn@example.com", "password123")
+    ali = create_credential(
+        db,
+        user.id,
+        name="ali",
+        provider="aliyun",
+        access_key="A",
+        secret_key="S",
+        settings=settings,
+    )
+    profile = create_profile(
+        db,
+        user.id,
+        name="ali-cdn",
+        dns_provider="dns_ali",
+        dns_credential_id=ali.id,
+        deploy_type="aliyun_cdn",
+        deploy_credential_id=ali.id,
+    )
+    cert = CertService(db, settings).create_certificate(
+        user.id,
+        CertCreateForm(
+            name="w",
+            acme_email="ops@example.com",
+            profile_id=profile.id,
+            issue_domains=["cdn.example.com"],
+            deploy_targets=[
+                {"type": "aliyun_cdn", "domains": ["cdn.example.com"], "https": {}}
+            ],
+        ),
+    )
+    assert cert.key_type == "ec-256"
+    runtime = ConfigBuilder().build(cert, settings, db=db)
+    raw = yaml.safe_load(runtime.config_path.read_text(encoding="utf-8"))
+    assert raw["certificates"][0]["targets"][0]["type"] == "aliyun_cdn"
+    assert raw["certificates"][0]["targets"][0]["domains"] == ["cdn.example.com"]
+    assert runtime.env["ALIYUN_AK"] == "A"

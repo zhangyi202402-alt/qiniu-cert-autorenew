@@ -138,10 +138,12 @@ def sync_renew_days(config_path: str | Path, acme_home: Path) -> list[str]:
 
 
 def deploy_hook_for(cert) -> str:
-    """选择 acme deploy-hook：纯 CLB 用 clb_wrapper，其余用 qiniu_wrapper（router 仍可部署 CLB）。"""
+    """选择 acme deploy-hook：纯 CLB 用 clb_wrapper，纯阿里云 CDN 用 cdn_wrapper，其余用 qiniu_wrapper。"""
     types = {t.type for t in iter_targets(cert)}
     if types == {"aliyun_clb"}:
         return "clb_wrapper"
+    if types == {"aliyun_cdn"}:
+        return "cdn_wrapper"
     return "qiniu_wrapper"
 
 

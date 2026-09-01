@@ -117,6 +117,30 @@ def test_build_issue_plans_clb_uses_rsa_and_clb_hook():
     assert plans[0].deploy_hook == "clb_wrapper"
 
 
+def test_build_issue_plans_aliyun_cdn_uses_cdn_hook():
+    from qiniu_cert.config import TargetAliyunCdn
+
+    config = AppConfig(
+        qiniu_ak="",
+        qiniu_sk="",
+        aliyun_ak="ak",
+        aliyun_sk="sk",
+        certificates=[
+            CertificateConfig(
+                name="cdn",
+                issue_domains=["cdn.example.com"],
+                dns_provider="dns_ali",
+                targets=[TargetAliyunCdn(domains=["cdn.example.com"])],
+            )
+        ],
+        state_file=Path("/tmp/state.json"),
+        acme=AcmeConfig(key_type="ec-256"),
+    )
+    plans = build_issue_plans(config)
+    assert plans[0].deploy_hook == "cdn_wrapper"
+    assert plans[0].keylength == "ec-256"
+
+
 def test_dns_env_shell_dedup(monkeypatch, tmp_path):
     cfg = tmp_path / "config.yaml"
     cfg.write_text(

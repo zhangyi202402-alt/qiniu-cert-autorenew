@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from qiniu_cert.config import effective_key_type, iter_targets, load_config
+from qiniu_cert.config import (
+    TargetAliyunCdn,
+    effective_key_type,
+    iter_targets,
+    load_config,
+)
 
 
 def test_legacy_qiniu_cdn_domains_still_loads(tmp_path: Path) -> None:
@@ -93,3 +98,34 @@ def test_clb_with_ec_key_type_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="rsa-2048"):
         load_config(p)
+
+
+def test_aliyun_cdn_target_loads(tmp_path: Path) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        textwrap.dedent(
+            """
+            qiniu: {access_key: "", secret_key: ""}
+            aliyun: {access_key: "aak", secret_key: "ask"}
+            acme: {email: "a@b.com", ca: letsencrypt, key_type: ec-256}
+            certificates:
+              - name: cdn1
+                issue_domains: [cdn.example.com, static.example.com]
+                dns_provider: dns_ali
+                targets:
+                  - type: aliyun_cdn
+                    domains: [cdn.example.com, static.example.com]
+                    https:
+                      force_https: true
+            paths: {state_file: state.json}
+            """
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config(p)
+    t = list(iter_targets(cfg.certificates[0]))[0]
+    assert isinstance(t, TargetAliyunCdn)
+    assert t.type == "aliyun_cdn"
+    assert t.domains == ["cdn.example.com", "static.example.com"]
+    assert t.https.force_https is True
+    assert effective_key_type(cfg.certificates[0], cfg.acme) == "ec-256"

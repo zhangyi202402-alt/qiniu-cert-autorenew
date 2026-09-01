@@ -14,7 +14,7 @@ from app.settings import Settings, get_settings
 
 PROVIDERS = frozenset({"aliyun", "tencent", "qiniu"})
 DNS_PROVIDERS = frozenset({"dns_ali", "dns_tencent"})
-DEPLOY_TYPES = frozenset({"qiniu_cdn", "aliyun_clb"})
+DEPLOY_TYPES = frozenset({"qiniu_cdn", "aliyun_clb", "aliyun_cdn"})
 
 
 def _master(settings: Settings | None = None) -> bytes:

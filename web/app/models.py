@@ -94,7 +94,7 @@ class DeployProfile(Base):
         ForeignKey("user_credentials.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    deploy_type: Mapped[str] = mapped_column(String(32), nullable=False)  # qiniu_cdn|aliyun_clb
+    deploy_type: Mapped[str] = mapped_column(String(32), nullable=False)  # qiniu_cdn|aliyun_cdn|aliyun_clb
     deploy_credential_id: Mapped[int] = mapped_column(
         BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey("user_credentials.id", ondelete="RESTRICT"),

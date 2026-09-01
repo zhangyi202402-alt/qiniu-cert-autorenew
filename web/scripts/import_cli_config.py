@@ -93,6 +93,8 @@ def _deploy_type_of(cert: dict) -> str:
     targets = cert.get("targets") or []
     if any(isinstance(t, dict) and t.get("type") == "aliyun_clb" for t in targets):
         return "aliyun_clb"
+    if any(isinstance(t, dict) and t.get("type") == "aliyun_cdn" for t in targets):
+        return "aliyun_cdn"
     if cert.get("qiniu_cdn_domains"):
         return "qiniu_cdn"
     raise ValueError(f"证书 {cert.get('name')} 无法判断部署类型（无 targets/qiniu_cdn_domains）")
@@ -106,6 +108,25 @@ def _deploy_targets(cert: dict, deploy_type: str) -> list[dict]:
             raise ValueError(f"{cert.get('name')}: qiniu_cdn_domains 为空")
         https = cert.get("https") or {}
         return [{"type": "qiniu_cdn", "domains": domains, "https": https}]
+    if deploy_type == "aliyun_cdn":
+        targets = []
+        for t in cert.get("targets") or []:
+            if not isinstance(t, dict) or t.get("type") != "aliyun_cdn":
+                continue
+            domains = [str(d).strip().lower().rstrip(".") for d in (t.get("domains") or [])]
+            domains = [d for d in domains if d]
+            if not domains:
+                continue
+            targets.append(
+                {
+                    "type": "aliyun_cdn",
+                    "domains": domains,
+                    "https": t.get("https") or cert.get("https") or {},
+                }
+            )
+        if not targets:
+            raise ValueError(f"{cert.get('name')}: 无 aliyun_cdn targets")
+        return targets
     targets = []
     for t in cert.get("targets") or []:
         if not isinstance(t, dict) or t.get("type") != "aliyun_clb":
@@ -301,7 +322,7 @@ def main() -> int:
         def deploy_cred_name(deploy_type: str) -> str:
             if deploy_type == "qiniu_cdn":
                 return "qiniu-cdn"
-            if deploy_type == "aliyun_clb":
+            if deploy_type in ("aliyun_clb", "aliyun_cdn"):
                 return "aliyun-clb"
             raise ValueError(f"unsupported deploy_type: {deploy_type}")
 

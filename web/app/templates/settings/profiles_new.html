@@ -21,6 +21,7 @@
     <label class="field-label">部署类型</label>
     <select name="deploy_type" class="deploy-type native-field">
       <option value="qiniu_cdn">七牛 CDN HTTPS</option>
+      <option value="aliyun_cdn">阿里云 CDN HTTPS</option>
       <option value="aliyun_clb">阿里云 CLB HTTPS</option>
     </select>
     <label class="field-label">部署凭证</label>
@@ -39,7 +40,7 @@
 (function(){
   var creds = {{ credentials_json|safe }};
   var dnsMap = {dns_ali:'aliyun', dns_tencent:'tencent'};
-  var depMap = {qiniu_cdn:'qiniu', aliyun_clb:'aliyun'};
+  var depMap = {qiniu_cdn:'qiniu', aliyun_cdn:'aliyun', aliyun_clb:'aliyun'};
   function fill(sel, provider, selected){
     if(!sel) return;
     sel.innerHTML = '';

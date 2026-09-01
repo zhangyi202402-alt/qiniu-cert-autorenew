@@ -22,7 +22,7 @@
     <textarea class="native-field" name="issue_domains" id="issue_domains" required placeholder="example.com&#10;*.example.com">{{ form.issue_domains or '' }}</textarea>
 
     <div id="cdn-box">
-      <label class="field-label" for="cdn_domains">七牛 CDN 加速域名（每行一个，须被签发域名覆盖）</label>
+      <label class="field-label" for="cdn_domains">CDN 加速域名（每行一个，须被签发域名覆盖）</label>
       <textarea class="native-field" name="cdn_domains" id="cdn_domains" placeholder="cdn.example.com">{{ form.cdn_domains or '' }}</textarea>
     </div>
     <div id="clb-box" style="display:none;">
@@ -49,7 +49,7 @@
     if(!suggested || !suggested.length) return '';
     var lines = [];
     suggested.forEach(function(t){
-      if(type==='qiniu_cdn' && t.type==='qiniu_cdn' && t.domains){
+      if((type==='qiniu_cdn' || type==='aliyun_cdn') && (t.type==='qiniu_cdn' || t.type==='aliyun_cdn') && t.domains){
         lines = lines.concat(t.domains);
       }
       if(type==='aliyun_clb' && t.type==='aliyun_clb'){
@@ -65,11 +65,11 @@
     var id = sel.value;
     var info = meta[id] || {};
     var t = info.deploy_type || '';
-    cdnBox.style.display = (t === 'qiniu_cdn') ? '' : 'none';
+    cdnBox.style.display = (t === 'qiniu_cdn' || t === 'aliyun_cdn') ? '' : 'none';
     clbBox.style.display = (t === 'aliyun_clb') ? '' : 'none';
     if(fromUser && id !== lastProfile){
       var pre = suggestedText(t, info.suggested||[]);
-      if(t==='qiniu_cdn'){ cdn.value = pre; clb.value=''; }
+      if(t==='qiniu_cdn' || t==='aliyun_cdn'){ cdn.value = pre; clb.value=''; }
       if(t==='aliyun_clb'){ clb.value = pre; cdn.value=''; }
     }
     lastProfile = id;
@@ -78,7 +78,7 @@
     sel.addEventListener('change', function(){ sync(true); });
     sync(false);
     var info = meta[sel.value]||{};
-    if(info.deploy_type==='qiniu_cdn' && !cdn.value) cdn.value = suggestedText('qiniu_cdn', info.suggested||[]);
+    if((info.deploy_type==='qiniu_cdn' || info.deploy_type==='aliyun_cdn') && !cdn.value) cdn.value = suggestedText(info.deploy_type, info.suggested||[]);
     if(info.deploy_type==='aliyun_clb' && !clb.value) clb.value = suggestedText('aliyun_clb', info.suggested||[]);
     sync(false);
   }

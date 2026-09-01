@@ -90,7 +90,7 @@ class AcmeRunner:
         deploy_dir = acme_home / "deploy"
         deploy_dir.mkdir(parents=True, exist_ok=True)
         scripts = self.settings.project_root / "scripts"
-        for name in ("qiniu_wrapper.sh", "clb_wrapper.sh"):
+        for name in ("qiniu_wrapper.sh", "clb_wrapper.sh", "cdn_wrapper.sh"):
             target = scripts / name
             link = deploy_dir / name
             if link.exists() or link.is_symlink():

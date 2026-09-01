@@ -26,7 +26,9 @@
       <div slot="supporting-text">
         {% if p.dns_provider == 'dns_ali' %}阿里云 DNS{% else %}腾讯云 DNS{% endif %}
         ·
-        {% if p.deploy_type == 'qiniu_cdn' %}七牛 CDN{% else %}阿里云 CLB{% endif %}
+        {% if p.deploy_type == 'qiniu_cdn' %}七牛 CDN
+        {% elif p.deploy_type == 'aliyun_cdn' %}阿里云 CDN
+        {% else %}阿里云 CLB{% endif %}
       </div>
       <div slot="end" style="display:flex;gap:0.35rem;align-items:center;">
         <a href="/settings/profiles/{{ p.id }}/edit" style="text-decoration:none;">
